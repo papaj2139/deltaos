@@ -1,0 +1,23 @@
+site_name: DeltaOS Docs
+theme:
+  name: material
+  features:
+    - content.code.copy
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: pink
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - scheme: paper
+      primary: indigo
+      accent: pink
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      use_pygments: true
+      pygments_lang_class: true
