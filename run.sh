@@ -5,7 +5,7 @@ set -e
 DISK_IMG="hda.img"
 DISK_SIZE_MB=64
 EFI_BINARY="BOOTX64.EFI"
-OVMF_CODE="boot/uefi/OVMF_CODE.4m.fd"
+OVMF_CODE=
 
 print_step() {
     echo -e "==> $1"
@@ -64,6 +64,22 @@ run_qemu() {
     qemu-system-x86_64 "${QEMU_ARGS[@]}"
 }
 
+find_ovmf() {
+    local ovmf_dirs=(
+        "/usr/share/ovmf/x64"
+        "/usr/share/edk2/x64"
+        "/usr/share/edk2-ovmf/x64"
+        "/usr/share/ovmf/"
+        "/usr/share/edk2/"
+        "/usr/share/edk2-ovmf/"
+    )
+
+    for dir in $ovmf_dirs
+    do
+        find $dir -name OVMF_CODE.4m.fd > /dev/null && OVMF_CODE="$dir/OVMF_CODE.4m.fd"
+    done
+}
+
 main() {
     #dependency check
     for cmd in qemu-system-x86_64 sgdisk mformat mmd mcopy; do
@@ -76,6 +92,7 @@ main() {
     #compile if source is newer than binary
     make > /dev/null
 
+    find_ovmf
     create_disk_image
     run_qemu
 }
