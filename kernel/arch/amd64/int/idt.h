@@ -1,5 +1,5 @@
-#ifndef INT_IDT_H
-#define INT_IDT_H
+#ifndef ARCH_AMD64_IDT_H
+#define ARCH_AMD64_IDT_H
 
 void idt_init(void);
 

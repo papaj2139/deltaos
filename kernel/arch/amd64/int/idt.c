@@ -1,5 +1,6 @@
 #include <types.h>
-#include "gdt.h"
+#include <int/gdt.h>
+#include <int/pic.h>
 #include <drivers/serial.h>
 
 struct idt_entry {
@@ -33,19 +34,30 @@ void exception_handler(uint64 vector, uint64 error_code) {
     serial_write("\n");
 }
 
-void idt_set_descriptor(uint8 vector, void *isr, uint8 flags) {
-    struct idt_entry *descriptor = &idt[vector];
+void idt_setgate(uint8 vector, void *isr, uint8 flags) {
+    struct idt_entry *gate = &idt[vector];
 
-    descriptor->isr_low = (uint64)isr & 0xFFFF;
-    descriptor->kernel_cs = GDT_KERNEL_CODE;
-    descriptor->ist = 0;
-    descriptor->attributes = flags;
-    descriptor->isr_mid = ((uint64)isr >> 16) & 0xFFFF;
-    descriptor->isr_high = ((uint64)isr >> 32) & 0xFFFFFFFF;
-    descriptor->reserved = 0;
+    gate->isr_low = (uint64)isr & 0xFFFF;
+    gate->kernel_cs = GDT_KERNEL_CODE;
+    gate->ist = 0;
+    gate->attributes = flags;
+    gate->isr_mid = ((uint64)isr >> 16) & 0xFFFF;
+    gate->isr_high = ((uint64)isr >> 32) & 0xFFFFFFFF;
+    gate->reserved = 0;
 }
 
 extern void *isr_stub_table[];
+
+void test(void) {
+    serial_write("recieved int 32\n");
+}
+
+__asm__ (
+".global eeee\n"
+"eeee:\n"
+"call test\n"
+"iretq\n"
+);
 
 void idt_init(void) {
     gdt_init();
@@ -54,8 +66,13 @@ void idt_init(void) {
 
     //install handlers for all 256 vectors
     for (int vector = 0; vector < 256; vector++) {
-        idt_set_descriptor(vector, isr_stub_table[vector], 0x8E);
+        idt_setgate(vector, isr_stub_table[vector], 0x8E);
     }
+
+    // PIC
+    pic_remap(0x20, 0x28);
+    extern void eeee(void);
+    idt_setgate(0x20, &eeee, 0x8E);
 
     __asm__ volatile ("lidt %0" : : "m"(idtr)); //load the idt
     __asm__ volatile ("sti"); //sets the interrupt flag

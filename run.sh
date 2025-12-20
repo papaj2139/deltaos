@@ -44,6 +44,7 @@ create_disk_image() {
 #execute qemu with ovmf
 run_qemu() {
     print_step "launching qemu"
+    pwd
     local QEMU_ARGS=(
         -machine q35
         -cpu qemu64
