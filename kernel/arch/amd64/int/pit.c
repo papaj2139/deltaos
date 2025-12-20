@@ -18,6 +18,7 @@ uint64 arch_timer_get_ticks(void) {
 
 void arch_timer_setfreq(uint32 hz) {
     if (hz == 0) return;
+    pit_freq = hz;
     uint16 div = (uint16)(PIT_BASE / hz);
     outb(PIT_CMD, 0b00110110);
     outb(PIT_CH0, div & 0xFF);
