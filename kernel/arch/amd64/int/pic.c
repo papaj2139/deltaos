@@ -1,5 +1,5 @@
-#include <types.h>
-#include <io/port.h>
+#include <arch/amd64/types.h>
+#include <arch/amd64/io.h>
 
 #define PIC1            0x20
 #define PIC2            0xA0

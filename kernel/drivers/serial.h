@@ -1,11 +1,12 @@
-#if defined(__x86_64__) || defined(_M_X64)
-#include <arch/amd64/drivers/serial.h>
-#elif defined(__i386__) || defined(_M_IX86)
-#error Not implemented!
-#elif defined(__aarch64__) || defined(_M_ARM64)
-#error Not implemented!
-#elif defined(__arm__) || defined(_M_ARM)
-#error Not implemented!
-#else
-#error Unknown architecture!
+#ifndef DRIVERS_SERIAL_H
+#define DRIVERS_SERIAL_H
+
+#include <arch/types.h>
+
+void serial_init(void);
+uint8 serial_is_transmit_empty(void);
+void serial_write_char(char c);
+void serial_write(const char* s);
+void serial_write_hex(uint64 n);
+
 #endif

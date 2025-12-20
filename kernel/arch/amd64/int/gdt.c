@@ -1,4 +1,4 @@
-#include "gdt.h"
+#include <arch/amd64/interrupts.h>
 
 struct gdt_entry {
     uint16 limit_low;

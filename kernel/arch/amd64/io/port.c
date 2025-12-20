@@ -1,4 +1,4 @@
-#include <arch/amd64/io/port.h>
+#include <arch/amd64/io.h>
 
 uint8 inb(uint16 port) {
     uint8 result;

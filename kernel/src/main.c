@@ -1,22 +1,12 @@
-#include <types.h>
-
+#include <arch/types.h>
+#include <arch/cpu.h>
 #include <drivers/serial.h>
-#include <int/idt.h>
-#include <int/pit.h>
-#include <int/idt.h>
-#include <int/pit.h>
 
-int main() {
-    serial_init();
-    serial_write("\x1b[2J\x1b[HHello, world!\n");
-
-    idt_init();
-    pit_init(100);  //100 Hz = 10ms ticks
+void kernel_main(void) {
+    serial_write("Hello world\n");
     
-    serial_write("Timer started waiting for ticks\n");
-    
+    //main kernel loop
     while (1) {
-        __asm__ volatile ("hlt");
+        arch_halt();
     }
-    return 0;
 }
