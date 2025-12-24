@@ -10,6 +10,8 @@
 //port I/O functions (x86-specific)
 uint8 inb(uint16 port);
 void outb(uint16 port, uint8 value);
+uint32 inl(uint16 port);
+void outl(uint16 port, uint32 value);
 
 //MMIO functions
 static inline uint8 mmio_read8(uintptr addr) {
