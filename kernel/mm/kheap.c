@@ -148,7 +148,7 @@ void kheap_init(void) {
         buckets[i].empty_slabs = NULL;
     }
     kheap_ready = true;
-    printf("[kheap] initialized (buckets: 16B-2KB, range: 0x%lx...)\n", KHEAP_VIRT_START);
+    printf("[kheap] initialized (buckets: 16B-2KB, range: 0x%lX...)\n", KHEAP_VIRT_START);
 }
 
 void *kmalloc(size n) {
@@ -252,7 +252,7 @@ void kfree(void *p) {
         if (large->magic == KHEAP_MAGIC_LARGE) {
             backing_free(large, large->pages);
         } else {
-            printf("[kheap] ERR: kfree invalid pointer %p (magic 0x%x)\n", p, meta->magic);
+            printf("[kheap] ERR: kfree invalid pointer %p (magic 0x%X)\n", p, meta->magic);
         }
     }
 }

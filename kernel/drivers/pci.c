@@ -223,14 +223,14 @@ static void pci_register_device(pci_device_t *pdev) {
     if (obj) {
         char name[32];
         //format: $devices/pci/BB:DD.F
-        snprintf(name, sizeof(name), "$devices/pci/%02x:%02x.%x", 
+        snprintf(name, sizeof(name), "$devices/pci/%02X:%02X.%X", 
                  pdev->bus, pdev->dev, pdev->func);
         ns_register(name, obj);
         object_deref(obj);  //namespace holds the ref now
     }
     
     //log discovery
-    printf("[pci] %02x:%02x.%x %04x:%04x %s (class %02x/%02x)\n",
+    printf("[pci] %02X:%02X.%X %04X:%04X %s (class %02X/%02X)\n",
            pdev->bus, pdev->dev, pdev->func,
            pdev->vendor_id, pdev->device_id,
            pci_class_name(pdev->class_code),

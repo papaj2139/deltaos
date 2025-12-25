@@ -38,7 +38,7 @@ void interrupt_handler(uint64 vector, uint64 error_code) {
     if (vector < 32) {
         set_outmode(SERIAL);
         puts("\n--- CPU EXCEPTION OCCURED ---\n");
-        printf("Vector:     0x%x\n", vector);
+        printf("Vector:     0x%X\n", vector);
         printf("Error code: 0x%llx\n", error_code);
         
         //page fault (vector 0xe) - decode error code and print details
@@ -75,7 +75,7 @@ void interrupt_handler(uint64 vector, uint64 error_code) {
                 keyboard_irq();
                 break;
             default:
-                printf("Unhandled IRQ: 0x%x\n", irq);
+                printf("Unhandled IRQ: 0x%X\n", irq);
                 break;
         }
 

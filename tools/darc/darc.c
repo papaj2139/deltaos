@@ -446,7 +446,7 @@ static int cmd_list(const char *archive) {
     }
     
     if (hdr.magic != DA_MAGIC) {
-        fprintf(stderr, "error: invalid magic (expected 0x%08x, got 0x%08x)\n", DA_MAGIC, hdr.magic);
+        fprintf(stderr, "error: invalid magic (expected 0x%08X, got 0x%08X)\n", DA_MAGIC, hdr.magic);
         fclose(f);
         return 1;
     }
@@ -583,17 +583,17 @@ static int cmd_info(const char *archive) {
     }
     
     printf("Delta Archive: %s\n", archive);
-    printf("  Version:      0x%04x\n", hdr.version);
-    printf("  Flags:        0x%04x", hdr.flags);
+    printf("  Version:      0x%04X\n", hdr.version);
+    printf("  Flags:        0x%04X", hdr.flags);
     if (hdr.flags & DA_FLAG_SORTED) printf(" SORTED");
     if (hdr.flags & DA_FLAG_HASHED) printf(" HASHED");
     printf("\n");
     printf("  Entries:      %u\n", hdr.entry_count);
-    printf("  Entry offset: 0x%08x\n", hdr.entry_off);
-    printf("  Strtab offset:0x%08x (%u bytes)\n", hdr.strtab_off, hdr.strtab_size);
-    printf("  Data offset:  0x%08x\n", hdr.data_off);
+    printf("  Entry offset: 0x%08X\n", hdr.entry_off);
+    printf("  Strtab offset:0x%08X (%u bytes)\n", hdr.strtab_off, hdr.strtab_size);
+    printf("  Data offset:  0x%08X\n", hdr.data_off);
     printf("  Total size:   %lu bytes\n", (unsigned long)hdr.total_size);
-    printf("  Checksum:     0x%08x\n", hdr.checksum);
+    printf("  Checksum:     0x%08X\n", hdr.checksum);
     
     return 0;
 }

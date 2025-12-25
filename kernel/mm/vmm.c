@@ -17,7 +17,7 @@ void vmm_kernel_map(uintptr virt, uintptr phys, size pages, uint64 flags) {
 
 void vmm_init(void) {
     pagemap_t *kernel_map = mmu_get_kernel_pagemap();
-    printf("[vmm] initializing kernel address space (PML4: 0x%x)\n", kernel_map->top_level);
+    printf("[vmm] initializing kernel address space (PML4: 0x%X)\n", kernel_map->top_level);
     
     //the kernel is already mapped by the bootloader (HHDM + Kernel ELF)
     //vmm_init can eventually set up heap guards whatever

@@ -25,7 +25,7 @@ void fb_init(void) {
     fb_pitch = fb->pitch;
     fb_size = fb_h * fb_pitch;
     
-    printf("[fb] initialised: %dx%d@0x%x\n", fb_w, fb_h, fb->address);
+    printf("[fb] initialised: %dx%d@0x%X\n", fb_w, fb_h, fb->address);
 }
 
 void fb_init_backbuffer(void) {
