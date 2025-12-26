@@ -2,6 +2,7 @@
 #include <lib/time.h>
 #include <drivers/console.h>
 #include <lib/math.h>
+#include <drivers/keyboard.h>
 
 #define SIZE    10
 #define FPS     60
@@ -14,6 +15,10 @@ typedef struct {
 
 point screen(point p) {
     point n;
+    if (p.x > 1) p.x = 1;
+    if (p.x < -1) p.x = -1;
+    if (p.y > 1) p.y = 1;
+    if (p.y < -1) p.y = -1;
     n.x = ((p.x + 1) / 2 ) * fb_height() + (fb_width() - fb_height()) / 2;
     n.y = (1 - ((p.y + 1) / 2 )) * fb_height();
     return n;
@@ -83,11 +88,16 @@ static double angle = 0;
 void frame() {
     double dt = 1.0/FPS;
     // dz += dt;
-    angle += M_PI * dt * 0.5;
+    // angle += M_PI * dt * 0.5;
+    char c;
+    get_key(&c);
+    switch (c) {
+        case 'w': dz += dt; break;
+        case 's': dz -= dt; break;
+        case 'a': angle += M_PI * dt * 0.5; break;
+        case 'd': angle -= M_PI * dt * 0.5; break;
+    }
     fb_clear(FB_BLACK);
-    // for (int i = 0; i < 8; i++) {
-    //     draw_point(screen(project(translate_z(rotate_xz(vs[i], angle), dz))));
-    // }
     for (int i = 0; i < 12; i++) {
             const point a = vs[es[i][0]];
             const point b = vs[es[i][1]];
