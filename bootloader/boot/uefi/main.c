@@ -484,7 +484,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         
         //ELF loaded successfully
         con_set_color(COLOR_GRAY, 0);
-        con_print_at(40, 100, "Kernel symbols loaded.");
+        con_print_at(40, 120, "Kernel symbols loaded.");
     } else {
         //if raw binary then use DB header entry_point or default to offset 0
         uint32_t entry_offset = db_req ? db_req->entry_point : 0;
@@ -557,7 +557,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
     struct db_boot_info *boot_info = build_boot_info(req_flags, cmdline, gop, mmap, mmap_size, desc_size, &load_info, kernel_path, (uint64_t)initrd_data, initrd_size);
     
     snprintf(boot_msg, sizeof(boot_msg), "Booting %s...", menu_entry ? menu_entry->name : "kernel.bin");
-    con_print_at(40, 60, boot_msg);
+    con_print_at(40, 100, boot_msg);
     gBS->Stall(500000);
     
     //get fresh memory map
