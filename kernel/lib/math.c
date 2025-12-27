@@ -40,6 +40,10 @@ double cos(double x) {
     return t1 - t2 + t3 - t4 + t5;
 }
 
+double tan(double x) {
+    return sin(x) / cos(x);
+}
+
 // https://en.wikipedia.org/wiki/Fast_inverse_square_root
 float isqrt(float a) {
     long i;
@@ -58,4 +62,16 @@ float isqrt(float a) {
 
 float sqrt(float x) {
     return 1.0 / isqrt(x);
+}
+
+int floor(double x) {
+    return (int)x;
+}
+
+int ceil(double x) {
+    return ((int)x) + 1;
+}
+
+double abs(double x) {
+    return (x < 0.0) ? -x : x;
 }
