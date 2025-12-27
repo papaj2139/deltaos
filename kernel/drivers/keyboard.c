@@ -34,7 +34,6 @@ static bool shift = false;
 static uint64 pressed = 0;
 
 bool get_keystate(char c) {
-    set_outmode(SERIAL);
     for (int i = 0; i < 128; i++) {
         if (scancodes_normal[i] == c) {
             if (pressed & (1ULL << i)) return true;
