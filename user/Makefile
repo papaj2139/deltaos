@@ -1,15 +1,19 @@
 .PHONY: all clean
 
-NASM := nasm
+
+CC := gcc
 LD := ld
+
+CFLAGS := -ffreestanding -fno-builtin -fno-stack-protector -m64 -c -O2
+LDFLAGS := -T link.ld
 
 all: init.bin
 
-init.o: init.asm
-	$(NASM) -f elf64 -o $@ $<
+init.o: init.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 init.bin: init.o
-	$(LD) -T link.ld -o $@ $<
+	$(LD) $(LDFLAGS) -o $@ $<
 
 clean:
 	rm -f *.o *.bin
