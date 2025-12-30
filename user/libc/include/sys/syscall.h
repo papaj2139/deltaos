@@ -1,20 +1,20 @@
 #ifndef __SYS_SYSCALL_H
 #define __SYS_SYSCALL_H
 
-#define SYS_exit            0
-#define SYS_getpid          1
-#define SYS_yield           2
-#define SYS_debug_write     3
-#define SYS_write           4
+#define SYS_EXIT            0
+#define SYS_GETPID          1
+#define SYS_YIELD           2
+#define SYS_DEBUG_WRITE     3
+#define SYS_WRITE           4
 
-#define SYS_handle_close    32
-#define SYS_handle_dup      33
-#define SYS_channel_create  34
-#define SYS_channel_read    35
-#define SYS_channel_write   36
-#define SYS_vmo_create      37
-#define SYS_vmo_read        38
-#define SYS_vmo_write       39
+#define SYS_HANDLE_CLOSE    32
+#define SYS_HANDLE_DUP      33
+#define SYS_CHANNEL_CREATE  34
+#define SYS_CHANNEL_READ    35
+#define SYS_CHANNEL_WRITE   36
+#define SYS_VMO_CREATE      37
+#define SYS_VMO_READ        38
+#define SYS_VMO_WRITE       39
 
 /* 
  *System V AMD64 syscall ABI:
@@ -24,7 +24,7 @@
  *- rcx and r11 are clobbered by syscall instruction
  */
 
-static inline long syscall0(long num) {
+static inline long __syscall0(long num) {
     long ret;
     __asm__ volatile(
         "syscall"
@@ -35,7 +35,7 @@ static inline long syscall0(long num) {
     return ret;
 }
 
-static inline long syscall1(long num, long a1) {
+static inline long __syscall1(long num, long a1) {
     long ret;
     __asm__ volatile(
         "syscall"
@@ -46,7 +46,7 @@ static inline long syscall1(long num, long a1) {
     return ret;
 }
 
-static inline long syscall2(long num, long a1, long a2) {
+static inline long __syscall2(long num, long a1, long a2) {
     long ret;
     __asm__ volatile(
         "syscall"
@@ -57,7 +57,7 @@ static inline long syscall2(long num, long a1, long a2) {
     return ret;
 }
 
-static inline long syscall3(long num, long a1, long a2, long a3) {
+static inline long __syscall3(long num, long a1, long a2, long a3) {
     long ret;
     __asm__ volatile(
         "syscall"
@@ -68,7 +68,7 @@ static inline long syscall3(long num, long a1, long a2, long a3) {
     return ret;
 }
 
-static inline long syscall4(long num, long a1, long a2, long a3, long a4) {
+static inline long __syscall4(long num, long a1, long a2, long a3, long a4) {
     long ret;
     register long r10 __asm__("r10") = a4;
     __asm__ volatile(
@@ -80,7 +80,7 @@ static inline long syscall4(long num, long a1, long a2, long a3, long a4) {
     return ret;
 }
 
-static inline long syscall5(long num, long a1, long a2, long a3, long a4, long a5) {
+static inline long __syscall5(long num, long a1, long a2, long a3, long a4, long a5) {
     long ret;
     register long r10 __asm__("r10") = a4;
     register long r8 __asm__("r8") = a5;
@@ -93,7 +93,7 @@ static inline long syscall5(long num, long a1, long a2, long a3, long a4, long a
     return ret;
 }
 
-static inline long syscall6(long num, long a1, long a2, long a3, long a4, long a5, long a6) {
+static inline long __syscall6(long num, long a1, long a2, long a3, long a4, long a5, long a6) {
     long ret;
     register long r10 __asm__("r10") = a4;
     register long r8 __asm__("r8") = a5;

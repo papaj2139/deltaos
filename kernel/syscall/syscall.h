@@ -4,21 +4,21 @@
 #include <arch/types.h>
 
 //syscall numbers
-#define SYS_exit            0
-#define SYS_getpid          1
-#define SYS_yield           2
-#define SYS_debug_write     3
-#define SYS_write           4   //write to VT console
+#define SYS_EXIT            0
+#define SYS_GETPID          1
+#define SYS_YIELD           2
+#define SYS_DEBUG_WRITE     3
+#define SYS_WRITE           4   //write to VT console
 
 //capability syscalls
-#define SYS_handle_close    32
-#define SYS_handle_dup      33
-#define SYS_channel_create  34
-#define SYS_channel_read    35
-#define SYS_channel_write   36
-#define SYS_vmo_create      37
-#define SYS_vmo_read        38
-#define SYS_vmo_write       39
+#define SYS_HANDLE_CLOSE    32
+#define SYS_HANDLE_DUP      33
+#define SYS_CHANNEL_CREATE  34
+#define SYS_CHANNEL_READ    35
+#define SYS_CHANNEL_WRITE   36
+#define SYS_VMO_CREATE      37
+#define SYS_VMO_READ        38
+#define SYS_VMO_WRITE       39
 
 #define SYS_MAX             64
 

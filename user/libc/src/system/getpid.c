@@ -2,5 +2,5 @@
 #include <sys/syscall.h>
 
 int64 getpid(void) {
-    return syscall0(SYS_getpid);
+    return __syscall0(SYS_GETPID);
 }

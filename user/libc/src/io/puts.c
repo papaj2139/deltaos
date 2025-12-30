@@ -3,5 +3,5 @@
 
 void puts(const char *str) {
     size len = strlen(str);
-    syscall2(SYS_write, (long)str, (long)len);
+    __syscall2(SYS_WRITE, (long)str, (long)len);
 }

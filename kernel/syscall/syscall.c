@@ -16,19 +16,19 @@ int64 syscall_dispatch(uint64 num, uint64 arg1, uint64 arg2, uint64 arg3,
     (void)arg3; (void)arg4; (void)arg5; (void)arg6;
     
     switch (num) {
-        case SYS_exit:
+        case SYS_EXIT:
             return sys_exit((int64)arg1);
         
-        case SYS_getpid:
+        case SYS_GETPID:
             return sys_getpid();
         
-        case SYS_yield:
+        case SYS_YIELD:
             return sys_yield();
         
-        case SYS_debug_write:
+        case SYS_DEBUG_WRITE:
             return sys_debug_write((const char *)arg1, (size)arg2);
         
-        case SYS_write:
+        case SYS_WRITE:
             return sys_write((const char *)arg1, (size)arg2);
         
         default:
