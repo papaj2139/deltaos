@@ -38,7 +38,10 @@ handle_t handle_open(const char *path, handle_rights_t rights) {
         prefix[prefix_len] = '\0';
         
         object_t *root = ns_lookup(prefix);
-        if (!root) return INVALID_HANDLE;
+        if (!root) {
+            root = ns_lookup(path);
+            if (!root) return INVALID_HANDLE;
+        };
         
         //if root is a directory (filesystem) do lookup
         if (root->type == OBJECT_DIR && root->data) {
@@ -52,6 +55,10 @@ handle_t handle_open(const char *path, handle_rights_t rights) {
                 object_deref(file);  //grant_handle refs it
                 return h;
             }
+        } else {
+            handle_t h = process_grant_handle(proc, root, rights);
+            object_deref(root);
+            return h;
         }
         object_deref(root);
         return INVALID_HANDLE;
@@ -126,11 +133,11 @@ handle_t handle_duplicate(handle_t h, handle_rights_t new_rights) {
 
 ssize handle_read(handle_t h, void *buf, size len) {
     process_t *proc = get_handle_owner();
-    if (!proc) return -1;
+    if (!proc) return INVALID_HANDLE;
     
     proc_handle_t *entry = process_get_handle_entry(proc, h);
-    if (!entry) return -1;
-    if (!entry->obj->ops || !entry->obj->ops->read) return -1;
+    if (!entry) return -2;
+    if (!entry->obj->ops || !entry->obj->ops->read) return -3;
     
     ssize result = entry->obj->ops->read(entry->obj, buf, len, entry->offset);
     if (result > 0) {
