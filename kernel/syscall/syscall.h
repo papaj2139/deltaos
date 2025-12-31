@@ -9,6 +9,7 @@
 #define SYS_YIELD           2
 #define SYS_DEBUG_WRITE     3
 #define SYS_WRITE           4   //write to VT console
+#define SYS_SPAWN           5   // spawns a new process
 
 //capability syscalls
 #define SYS_HANDLE_CLOSE    32

@@ -1,5 +1,6 @@
 #include <system.h>
 #include <io.h>
+#include <sys/syscall.h>
 
 int main(int argc, char *argv[]) {
     puts("[user] hello from userspace!\n");
@@ -10,7 +11,13 @@ int main(int argc, char *argv[]) {
         printf("[user] argv[%d] = %s\n", i, argv[i]);
     }
 
-    printf("[user] getpid() = %d\n", (int)getpid());
+    int pid = (int)getpid();
+    printf("[user] getpid() = %d\n", pid);
+
+    if (pid == 1) {
+        puts("attempting spawn()...\n");
+        __syscall3(SYS_SPAWN, (long)"/initrd/init", 1, (long)(char*[]){"/initrd/init", NULL});
+    }
     
     puts("[user] syscall test complete, exiting\n");
     

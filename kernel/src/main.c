@@ -87,8 +87,9 @@ static void spawn_init(void) {
     
     //set up argc/argv
     char *init_argv[] = { "/initrd/init", NULL };
+    int init_argc = sizeof(init_argv) / sizeof(init_argv[0]) - 1;
     uintptr user_stack_top = process_setup_user_stack(stack_phys, user_stack_base, 
-                                                       stack_size, 1, init_argv);
+                                                       stack_size, init_argc, init_argv);
     printf("[init] stack at 0x%lx, argc=1, argv[0]=%s\n", user_stack_top, init_argv[0]);
     
     //create user thread

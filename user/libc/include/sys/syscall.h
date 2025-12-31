@@ -6,6 +6,7 @@
 #define SYS_YIELD           2
 #define SYS_DEBUG_WRITE     3
 #define SYS_WRITE           4
+#define SYS_SPAWN           5
 
 #define SYS_HANDLE_CLOSE    32
 #define SYS_HANDLE_DUP      33
