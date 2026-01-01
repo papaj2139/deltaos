@@ -199,10 +199,10 @@ static int do_printf(print_ctx_t *ctx, const char *format, va_list args) {
                     for (int i = 0; i < pad; i++) ctx_putc(ctx, ' ');
                 }
             } 
-            else if (*p == 'x' || *p == 'X' || *p == 'p') {
+            else if (*p == 'x' || *p == 'X' || *p == 'p' || *p == 'P') {
                 uintmax num;
                 int prefix = 0;
-                char hexcase = (*p == 'X') ? 'A' : 'a';
+                char hexcase = (*p == 'X' || *p == 'P') ? 'A' : 'a';
                 
                 if (*p == 'p') {
                     num = (uintptr)va_arg(args, void*);
@@ -243,35 +243,7 @@ static int do_printf(print_ctx_t *ctx, const char *format, va_list args) {
                 if (left_align && pad > 0) {
                     for (int i = 0; i < pad; i++) ctx_putc(ctx, ' ');
                 }
-            } else if (*p == 'X' || *p == 'P') {
-                uintmax num;
-                if (*p == 'P') {
-                    num = (uintptr)va_arg(args, void*);
-                    putc('0');
-                    putc('x');
-                } else if (is_long || is_size) {
-                    num = va_arg(args, unsigned long);
-                } else {
-                    num = va_arg(args, unsigned int);
-                }
-
-                char tmp[32];
-                int len = 0;
-
-                if (num == 0) {
-                    tmp[len++] = '0';
-                } else {
-                    while (num) {
-                        int digit = num & 0xF;
-                        tmp[len++] = (char)((digit < 10) ? ('0' + digit) : ('A' + (digit - 10)));
-                        num >>= 4;
-                    }
-                }
-                for (int i = len - 1; i >= 0; i--) {
-                    putc(tmp[i]);
-                }
-            }
-            else if (*p == '%') {
+            } else if (*p == '%') {
                 ctx_putc(ctx, '%');
             }
             else {

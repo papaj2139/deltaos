@@ -71,7 +71,7 @@ static void spawn_init(void) {
         process_destroy(proc);
         return;
     }
-    printf("[init] entry: 0x%lx\n", info.entry);
+    printf("[init] entry: 0x%lX\n", info.entry);
     
     //allocate user stack
     uintptr user_stack_base = 0x7FFFFFFFE000ULL;
@@ -90,7 +90,7 @@ static void spawn_init(void) {
     int init_argc = sizeof(init_argv) / sizeof(init_argv[0]) - 1;
     uintptr user_stack_top = process_setup_user_stack(stack_phys, user_stack_base, 
                                                        stack_size, init_argc, init_argv);
-    printf("[init] stack at 0x%lx, argc=1, argv[0]=%s\n", user_stack_top, init_argv[0]);
+    printf("[init] stack at 0x%lX, argc=1, argv[0]=%s\n", user_stack_top, init_argv[0]);
     
     //create user thread
     thread_t *thread = thread_create_user(proc, (void*)info.entry, (void*)user_stack_top);

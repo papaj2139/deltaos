@@ -83,7 +83,7 @@ static void backing_free(void *virt, size pages) {
     }
 
     //no free slots so virtual address is leaked (rare asf edge case)
-    printf("[kheap] WARN: vhole table full, leaking %zu pages at %p\n", pages, virt);
+    printf("[kheap] WARN: vhole table full, leaking %zu pages at %P\n", pages, virt);
 }
 
 static void list_remove(slab_t **head, slab_t *slab) {
@@ -252,7 +252,7 @@ void kfree(void *p) {
         if (large->magic == KHEAP_MAGIC_LARGE) {
             backing_free(large, large->pages);
         } else {
-            printf("[kheap] ERR: kfree invalid pointer %p (magic 0x%X)\n", p, meta->magic);
+            printf("[kheap] ERR: kfree invalid pointer %P (magic 0x%X)\n", p, meta->magic);
         }
     }
 }

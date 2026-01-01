@@ -42,9 +42,9 @@ void interrupt_handler(uint64 vector, uint64 error_code, uint64 rip) {
         set_outmode(SERIAL);
         puts("\n--- CPU EXCEPTION OCCURED ---\n");
         printf("Vector:     0x%X\n", vector);
-        printf("Error code: 0x%llx\n", error_code);
-        printf("RIP:        0x%llx\n", rip);
-        printf("RSP:        0x%llx\n", rsp);
+        printf("Error code: 0x%llX\n", error_code);
+        printf("RIP:        0x%llX\n", rip);
+        printf("RSP:        0x%llX\n", rsp);
         
         //page fault (vector 0xe) - decode error code and print details
         if (vector == 0xe) {

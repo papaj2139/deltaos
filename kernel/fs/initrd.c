@@ -66,7 +66,7 @@ void initrd_init(void) {
     initrd_base = (void *)P2V(tag->start);
     initrd_size = tag->length;
     
-    printf("[initrd] found at phys 0x%lx, size %lu bytes\n", 
+    printf("[initrd] found at phys 0x%lX, size %lu bytes\n", 
            tag->start, (unsigned long)initrd_size);
     
     //validate DA archive
