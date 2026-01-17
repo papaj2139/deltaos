@@ -62,6 +62,9 @@ typedef struct {
 int channel_recv_msg(handle_t ep, void *data_buf, int data_len,
                      int32 *handles_buf, uint32 handles_len,
                      channel_recv_result_t *result);
+int channel_try_recv_msg(handle_t ep, void *data_buf, int data_len,
+                     int32 *handles_buf, uint32 handles_len,
+                     channel_recv_result_t *result);
 
 //virtual memory objects
 handle_t vmo_create(uint64 size, uint32 flags, uint32 rights);

@@ -442,6 +442,53 @@ static int64 sys_channel_recv_msg(handle_t ep, void *data_buf, size data_len,
     return 0;
 }
 
+//receive a message with handles from a channel endpoint (non-blocking)
+//data_buf: buffer for message data
+//data_len: max bytes to copy
+//handles_buf: buffer for received handles (array of int32)
+//handles_len: max handles
+//result_out: receives actual counts
+static int64 sys_channel_try_recv_msg(handle_t ep, void *data_buf, size data_len,
+                                  int32 *handles_buf, uint32 handles_len,
+                                  channel_recv_result_t *result_out) {
+    process_t *proc = process_current();
+    if (!proc) return -1;
+    if (!result_out) return -1;
+    
+    channel_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    int result = channel_try_recv(proc, ep, &msg);
+    if (result != 0) return result;
+    
+    //copy data to userspace
+    size to_copy = msg.data_len < data_len ? msg.data_len : data_len;
+    if (to_copy > 0 && msg.data && data_buf) {
+        memcpy(data_buf, msg.data, to_copy);
+    }
+    
+    //copy handles to userspace
+    uint32 handles_to_copy = msg.handle_count < handles_len ? msg.handle_count : handles_len;
+    if (handles_to_copy > 0 && msg.handles && handles_buf) {
+        memcpy(handles_buf, msg.handles, handles_to_copy * sizeof(int32));
+    }
+    
+    //close excess handles that didn't fit in the buffer
+    for (uint32 i = handles_to_copy; i < msg.handle_count; i++) {
+        process_close_handle(proc, msg.handles[i]);
+    }
+    
+    //fill result
+    result_out->data_len = msg.data_len;
+    result_out->handle_count = msg.handle_count;
+    result_out->sender_pid = msg.sender_pid;
+    
+    //cleanup
+    if (msg.data) kfree(msg.data);
+    if (msg.handles) kfree(msg.handles);
+    
+    return 0;
+}
+
 //register a handle in the namespace
 //allows userspace services to publish their objects for other processes to find
 static int64 sys_ns_register(const char *path, handle_t h) {
@@ -588,6 +635,9 @@ int64 syscall_dispatch(uint64 num, uint64 arg1, uint64 arg2, uint64 arg3,
         case SYS_VMO_READ: return sys_vmo_read((handle_t)arg1, (void *)arg2, (size)arg3, (size)arg4);
         case SYS_VMO_WRITE: return sys_vmo_write((handle_t)arg1, (const void *)arg2, (size)arg3, (size)arg4);
         case SYS_CHANNEL_RECV_MSG: return sys_channel_recv_msg((handle_t)arg1, (void *)arg2, (size)arg3,
+                                                                (int32 *)arg4, (uint32)arg5,
+                                                                (channel_recv_result_t *)arg6);
+        case SYS_CHANNEL_TRY_RECV_MSG: return sys_channel_try_recv_msg((handle_t)arg1, (void *)arg2, (size)arg3,
                                                                 (int32 *)arg4, (uint32)arg5,
                                                                 (channel_recv_result_t *)arg6);
         case SYS_VMO_MAP: return sys_vmo_map((handle_t)arg1, (uintptr)arg2, (size)arg3, (size)arg4, (uint32)arg5);

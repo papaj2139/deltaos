@@ -23,3 +23,10 @@ int channel_recv_msg(int32 ep, void *data_buf, int data_len,
     return __syscall6(SYS_CHANNEL_RECV_MSG, ep, (long)data_buf, data_len,
                       (long)handles_buf, handles_len, (long)result);
 }
+
+int channel_try_recv_msg(int32 ep, void *data_buf, int data_len,
+                     int32 *handles_buf, uint32 handles_len,
+                     channel_recv_result_t *result) {
+    return __syscall6(SYS_CHANNEL_TRY_RECV_MSG, ep, (long)data_buf, data_len,
+                      (long)handles_buf, handles_len, (long)result);
+}

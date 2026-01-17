@@ -51,6 +51,11 @@ static void clear_cursor(uint32 *framebuffer, int x, int y) {
     fb_fillrect(framebuffer, x, y, cw, ch, 0);
 }
 
+typedef struct {
+    uint16 width, height;
+    char *title;
+} window_req_t;
+
 void mouse_tick(handle_t mouse_channel) {
     mouse_event_t event;
     int len = channel_recv(mouse_channel, &event, sizeof(event));
@@ -71,6 +76,16 @@ void mouse_tick(handle_t mouse_channel) {
         if (cursor_y >= FB_H) cursor_y = FB_H - 1;
         if (cursor_y < 0) cursor_y = 0;
 
+
+        if (event.buttons & MOUSE_BTN_LEFT) { // test - spawn a window on click
+            handle_t create = get_obj(INVALID_HANDLE, "$gui/window/create", RIGHT_WRITE | RIGHT_READ);
+            window_req_t req = { .width = 800, .height = 600, .title = "Test App" };
+            channel_send(create, &req, sizeof(req));
+
+            handle_t window;
+            channel_recv(create, &window, sizeof(window));
+        }
+
         draw_cursor(fb, cursor_x, cursor_y);
         handle_write(fb_handle, fb, 4096000);
         handle_seek(fb_handle, 0, HANDLE_SEEK_SET);
@@ -81,7 +96,7 @@ void mouse_tick(handle_t mouse_channel) {
 
 void window_create(handle_t window_channel) {
     channel_recv_result_t res;
-    int len = channel_recv_msg(window_channel, NULL, 0, NULL, 0, &res);
+    int len = channel_try_recv_msg(window_channel, NULL, 0, NULL, 0, &res);
     if (len <= 0) {
         yield();
         return;
@@ -108,8 +123,8 @@ int main(int argc, char *argv[]) {
     }
 
     //create an endpoint for window creation
-    handle_t window_channel;
-    channel_create(&window_channel, &window_channel);
+    handle_t window_channel, empty;
+    channel_create(&window_channel, &empty);
     ns_register("$gui/window/create", window_channel);
 
     while (1) {

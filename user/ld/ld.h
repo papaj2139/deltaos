@@ -14,8 +14,8 @@ typedef unsigned char uint8_t;
 #define SYS_HANDLE_READ 6
 #define SYS_HANDLE_CLOSE 32
 #define SYS_VMO_CREATE  37
-#define SYS_VMO_MAP     41
-#define SYS_STAT        44
+#define SYS_VMO_MAP     40
+#define SYS_STAT        43
 
 #define HANDLE_RIGHT_DUPLICATE  (1 << 0)
 #define HANDLE_RIGHT_TRANSFER   (1 << 1)

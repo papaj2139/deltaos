@@ -23,13 +23,14 @@
 #define SYS_VMO_CREATE      37
 #define SYS_VMO_READ        38
 #define SYS_VMO_WRITE       39
-#define SYS_CHANNEL_RECV_MSG 40  //receive with handles
-#define SYS_VMO_MAP         41  //map VMO into address space
-#define SYS_VMO_UNMAP       42  //unmap from address space
-#define SYS_NS_REGISTER     43  //register handle in namespace
-#define SYS_STAT            44  //get file status by path
-#define SYS_CHANNEL_TRY_RECV 45  //non-blocking channel receive
-#define SYS_WAIT            46  //wait for process to exit
+#define SYS_VMO_MAP         40  //map VMO into address space
+#define SYS_VMO_UNMAP       41  //unmap from address space
+#define SYS_NS_REGISTER     42  //register handle in namespace
+#define SYS_STAT            43  //get file status by path
+#define SYS_CHANNEL_TRY_RECV 44  //non-blocking channel receive
+#define SYS_CHANNEL_RECV_MSG 45  //receive with handles
+#define SYS_CHANNEL_TRY_RECV_MSG 46 //non-blocking recv_msg
+#define SYS_WAIT            47  //wait for process to exit
 
 //capability-based process creation (Zircon-style)
 #define SYS_PROCESS_CREATE  50  //create suspended process, returns handle
