@@ -76,14 +76,8 @@ void mouse_tick(handle_t mouse_channel) {
         if (cursor_y >= FB_H) cursor_y = FB_H - 1;
         if (cursor_y < 0) cursor_y = 0;
 
-
-        if (event.buttons & MOUSE_BTN_LEFT) { // test - spawn a window on click
-            handle_t create = get_obj(INVALID_HANDLE, "$gui/window/create", RIGHT_WRITE | RIGHT_READ);
-            window_req_t req = { .width = 800, .height = 600, .title = "Test App" };
-            channel_send(create, &req, sizeof(req));
-
-            handle_t window;
-            channel_recv(create, &window, sizeof(window));
+        if (event.buttons & MOUSE_BTN_LEFT) {
+            spawn("$files/initrd/app", 0, NULL);
         }
 
         draw_cursor(fb, cursor_x, cursor_y);
@@ -101,6 +95,8 @@ void window_create(handle_t window_channel) {
         yield();
         return;
     }
+
+    debug_puts("RECIEVED WINDOW CREATE CALL\n");
 
     handle_t ep0, ep1;
     channel_create(&ep0, &ep1);
