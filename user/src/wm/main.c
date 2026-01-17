@@ -51,40 +51,70 @@ static void clear_cursor(uint32 *framebuffer, int x, int y) {
     fb_fillrect(framebuffer, x, y, cw, ch, 0);
 }
 
+void mouse_tick(handle_t mouse_channel) {
+    mouse_event_t event;
+    int len = channel_recv(mouse_channel, &event, sizeof(event));
+    
+    if (len <= 0) {
+        yield();
+        return;
+    }
+    
+    if (len == sizeof(mouse_event_t)) {
+        clear_cursor(fb, cursor_x, cursor_y);
+        
+        cursor_x += event.dx;
+        cursor_y += event.dy;
+        
+        if (cursor_x >= FB_W) cursor_x = FB_W - 1;
+        if (cursor_x < 0) cursor_x = 0;
+        if (cursor_y >= FB_H) cursor_y = FB_H - 1;
+        if (cursor_y < 0) cursor_y = 0;
+
+        draw_cursor(fb, cursor_x, cursor_y);
+        handle_write(fb_handle, fb, 4096000);
+        handle_seek(fb_handle, 0, HANDLE_SEEK_SET);
+    } else {
+        printf("Received unexpected message size: %d\n", len);
+    }
+}
+
+void window_create(handle_t window_channel) {
+    channel_recv_result_t res;
+    int len = channel_recv_msg(window_channel, NULL, 0, NULL, 0, &res);
+    if (len <= 0) {
+        yield();
+        return;
+    }
+
+    handle_t ep0, ep1;
+    channel_create(&ep0, &ep1);
+
+    char path[64];
+    snprintf(path, sizeof(path), "$gui/window/%d", res.sender_pid);
+    ns_register(path, ep0);
+
+    channel_send(window_channel, &ep1, sizeof(ep1));
+}
+
 int main(int argc, char *argv[]) {
     fb = malloc(FB_W * FB_H * sizeof(uint32));
     fb_handle = get_obj(INVALID_HANDLE, "$devices/fb0", RIGHT_WRITE);
-    int32 mouse_channel = get_obj(INVALID_HANDLE, "$devices/mouse/channel", RIGHT_READ);
+    
+    handle_t mouse_channel = get_obj(INVALID_HANDLE, "$devices/mouse/channel", RIGHT_READ);
     if (mouse_channel == INVALID_HANDLE) {
         puts("Failed to open $devices/mouse/channel\n");
         return 1;
-    }    
-    while (1) {
-        mouse_event_t event;
-        int len = channel_recv(mouse_channel, &event, sizeof(event));
-        
-        if (len <= 0) {
-            yield();
-            continue;
-        }
-        
-        if (len == sizeof(mouse_event_t)) {
-            clear_cursor(fb, cursor_x, cursor_y);
-            
-            cursor_x += event.dx;
-            cursor_y += event.dy;
-            
-            if (cursor_x >= FB_W) cursor_x = FB_W - 1;
-            if (cursor_x < 0) cursor_x = 0;
-            if (cursor_y >= FB_H) cursor_y = FB_H - 1;
-            if (cursor_y < 0) cursor_y = 0;
+    }
 
-            draw_cursor(fb, cursor_x, cursor_y);
-            handle_write(fb_handle, fb, 4096000);
-            handle_seek(fb_handle, 0, HANDLE_SEEK_SET);
-        } else {
-            printf("Received unexpected message size: %d\n", len);
-        }
+    //create an endpoint for window creation
+    handle_t window_channel;
+    channel_create(&window_channel, &window_channel);
+    ns_register("$gui/window/create", window_channel);
+
+    while (1) {
+        mouse_tick(mouse_channel);
+        window_create(window_channel);
     }
     
     return 0;
