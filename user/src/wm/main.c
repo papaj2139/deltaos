@@ -3,6 +3,7 @@
 #include <mem.h>
 #include <io.h>
 #include "fb.h"
+#include "protocol.h"
 
 #define FB_BACKBUFFER_SIZE  (1280 * 800 * sizeof(uint32))
 
@@ -10,7 +11,7 @@ static inline int max(int a, int b) {
     return (a > b) ? a : b;
 }
 
-static inline int min(int64 a, int64 b) {
+static inline int min(int a, int b) {
     return (a < b) ? a : b;
 }
 
@@ -29,41 +30,10 @@ void server_setup(handle_t *server, handle_t *client) {
 }
 
 typedef struct {
-    enum {
-        CREATE, COMMIT, DESTROY,
-    } type;
-    union {
-        struct {
-            uint16 width, height;
-        } create;
-        struct {
-
-        } commit;
-        struct {
-
-        } destroy;
-    } u;
-} wm_req_t;
-
-typedef struct {
-    bool ack;
-    union {
-        struct {
-
-        } create;
-        struct {
-
-        } commit;
-        struct {
-
-        } destroy;
-    } u;
-} wm_res_t;
-
-typedef struct {
     uint32 pid;
+    handle_t handle;
     uint32 *surface;
-    handle_t vmo_handle;
+    handle_t vmo;
     uint16 surface_w, surface_h;
     uint16 win_w, win_h;
     uint16 x, y;
@@ -83,6 +53,17 @@ void recompute_layout(uint16 screen_w, uint16 screen_h) {
         clients[i].win_w = screen_w;
         clients[i].win_h = (i == num_clients - 1) ? (screen_h - tile_h * (num_clients - 1)) : tile_h;
         clients[i].dirty = true;
+        
+        wm_res_t configure = (wm_res_t){
+            .type = CONFIGURE,
+            .u.configure = {
+                .x = 0,
+                .y = clients[i].y,
+                .w = screen_w,
+                .h = clients[i].win_h
+            }
+        };
+        channel_send(clients[i].handle, &configure, sizeof(configure));
     }
 }
 
@@ -91,16 +72,22 @@ void window_create(handle_t *server, channel_recv_result_t res, wm_req_t req) {
 
     //create surface
     char path[64];
-    handle_t client_vmo = vmo_create(req.u.create.width * req.u.create.height * sizeof(uint32), VMO_FLAG_NONE, RIGHT_MAP);
+    handle_t client_vmo = vmo_create(req.u.create.width * req.u.create.height * sizeof(uint32), VMO_FLAG_RESIZABLE, RIGHT_MAP);
     snprintf(path, sizeof(path), "$gui/%d/surface", res.sender_pid);
     ns_register(path, client_vmo);
     uint32 *surface = vmo_map(client_vmo, NULL, 0, req.u.create.width * req.u.create.height * sizeof(uint32), RIGHT_MAP);
-    if (!surface) debug_puts("wm: failed to map client's surface\n");
+
+    //create personal ipc channel
+    handle_t wm_end, client_end;
+    channel_create(&wm_end, &client_end);
+    snprintf(path, sizeof(path), "$gui/%d/channel", res.sender_pid);
+    ns_register(path, client_end);
 
     clients[num_clients++] = (wm_client_t){
         .pid = res.sender_pid,
+        .handle = wm_end,
         .surface = surface,
-        .vmo_handle = client_vmo,
+        .vmo = client_vmo,
         .surface_w = req.u.create.width,
         .surface_h = req.u.create.height,
         .win_w = req.u.create.width,
@@ -110,18 +97,18 @@ void window_create(handle_t *server, channel_recv_result_t res, wm_req_t req) {
         .dirty = false,
     };
 
-    wm_res_t resp = (wm_res_t){ .ack = true };
+    wm_res_t resp = (wm_res_t){ .type = ACK, .u.ack = true };
     channel_send(*server, &resp, sizeof(resp));
 
     recompute_layout(1280, 800);
 }
 
-void window_commit(handle_t *server, channel_recv_result_t res, wm_req_t req) {
+void window_commit(handle_t client, channel_recv_result_t res, wm_req_t req) {
     for (int i = 0; i < num_clients; i++) {
         if (clients[i].pid == res.sender_pid) {
             clients[i].dirty = true;
-            wm_res_t resp = (wm_res_t){ .ack = true };
-            channel_send(*server, &resp, sizeof(resp));
+            wm_res_t resp = (wm_res_t){ .type = ACK, .u.ack = true };
+            channel_send(client, &resp, sizeof(resp));
             return;
         }
     }
@@ -130,13 +117,18 @@ void window_commit(handle_t *server, channel_recv_result_t res, wm_req_t req) {
 void server_listen(handle_t *server) {
     wm_req_t msg;
     channel_recv_result_t res;
-    if (channel_recv_msg(*server, &msg, sizeof(wm_req_t), NULL, 0, &res) != 0) {
-        yield(); return;
+    if (channel_try_recv_msg(*server, &msg, sizeof(wm_req_t), NULL, 0, &res) == 0) {
+        switch (msg.type) {
+            case CREATE: window_create(server, res, msg); break;
+        }
     }
 
-    switch (msg.type) {
-        case CREATE: window_create(server, res, msg); break;
-        case COMMIT: window_commit(server, res, msg); break;
+    for (int i = 0; i < num_clients; i++) {
+        if (channel_try_recv_msg(clients[i].handle, &msg, sizeof(wm_req_t), NULL, 0, &res) != 0) continue;
+
+        switch (msg.type) {
+            case COMMIT: window_commit(clients[i].handle, res, msg);
+        }
     }
 }
 
@@ -200,7 +192,7 @@ int main(void) {
         server_listen(&server_handle);
         // handle_input();
         render_surfaces(fb_handle, fb_backbuffer);
-        
+
         yield();
     }
     __builtin_unreachable();
