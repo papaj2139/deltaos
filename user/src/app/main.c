@@ -67,6 +67,7 @@ int main(void) {
         //wait for ack
         channel_recv(wm_handle, &res, sizeof(res));
         if (res.ack != true) debug_puts("Failed to commit surface\n");
+        yield();
     }
 
     return 0;
