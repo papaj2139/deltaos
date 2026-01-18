@@ -20,6 +20,16 @@ SRC_OBJS := $(SRC_SRCS:.c=.o)
 TOPS := $(sort $(foreach f,$(SRC_SRCS),$(firstword $(subst /, ,$(patsubst src/%,%,$(dir $(f)))))))
 USER_BINS := $(patsubst %,../initrd/%,$(TOPS))
 
+define LOAD_PROJECT_CONFIG
+CFLAGS_$(1) 	:=
+LDFLAGS_$(1) 	:=
+LDLIBS_$(1) 	:=
+
+-include src/$(1)/.config
+endef
+
+$(foreach t,$(TOPS),$(eval $(call LOAD_PROJECT_CONFIG,$t)))
+
 all: ld libc.so $(USER_BINS)
 
 libc/src/crt0.o: libc/src/crt0.S
@@ -38,12 +48,16 @@ libc.so: $(LIBC_OBJS)
 	cp libc.so ../initrd/system/libraries/
 
 src/%.o: src/%.c
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) $(CFLAGS_$(firstword $(subst /, ,$(patsubst src/%,%,$(dir $<))))) -o $@ $<
 
 define LINK_USER
 ../initrd/$(1): $(CRT0) $(filter src/$(1)/%,$(SRC_OBJS)) libc.so
 	mkdir -p ../initrd
-	$(LD) $(LDFLAGS) -dynamic-linker /system/libraries/ld.so -L. -o $$@ $(CRT0) $(filter src/$(1)/%,$(SRC_OBJS)) -lc
+	$(LD) $(LDFLAGS) $(LDFLASG_$(1)) \
+		-dynamic-linker /system/libraries/ld.so \
+		-L. -o $$@ \
+		$(CRT0) $(filter src/$(1)/%,$(SRC_OBJS)) \
+		-lc $(LDLIBS_$(1))
 endef
 
 $(foreach t,$(TOPS),$(eval $(call LINK_USER,$t)))

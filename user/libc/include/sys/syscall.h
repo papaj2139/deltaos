@@ -19,13 +19,14 @@
 #define SYS_VMO_CREATE      37
 #define SYS_VMO_READ        38
 #define SYS_VMO_WRITE       39
-#define SYS_VMO_MAP         41
-#define SYS_VMO_UNMAP       42
-#define SYS_NS_REGISTER     43
-#define SYS_STAT            44
-#define SYS_CHANNEL_TRY_RECV 45
-#define SYS_CHANNEL_RECV_MSG 40
-#define SYS_WAIT            46
+#define SYS_VMO_MAP         40
+#define SYS_VMO_UNMAP       41
+#define SYS_NS_REGISTER     42
+#define SYS_STAT            43
+#define SYS_CHANNEL_TRY_RECV 44
+#define SYS_CHANNEL_RECV_MSG 45
+#define SYS_CHANNEL_TRY_RECV_MSG 46
+#define SYS_WAIT            47
 
 //capability-based process creation (Zircon-style)
 #define SYS_PROCESS_CREATE  50  //create suspended process, returns handle
