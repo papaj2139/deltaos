@@ -38,7 +38,7 @@ void con_draw_char(uint32_t x, uint32_t y, char c, uint32_t fg, uint32_t bg) {
         for (uint32_t px = 0; px < CHAR_WIDTH; px++) {
             if (row & (0x80 >> px)) {
                 gfx_put_pixel(x + px, y + py, fg);
-            } else if (bg != 0) {
+            } else {
                 gfx_put_pixel(x + px, y + py, bg);
             }
         }
@@ -81,6 +81,7 @@ void con_print(const char *str) {
 
 void con_print_at(uint32_t x, uint32_t y, const char *str) {
     while (*str) {
+        con_draw_char(x, y, ' ', bg_color, bg_color);
         con_draw_char(x, y, *str, fg_color, bg_color);
         x += CHAR_WIDTH;
         str++;
