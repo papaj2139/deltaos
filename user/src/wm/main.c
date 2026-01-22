@@ -155,7 +155,7 @@ void window_create(handle_t *server, channel_recv_result_t res, wm_client_msg_t 
     if (focused == -1) focused = 0;
 }
 
-void window_commit(handle_t client, channel_recv_result_t res, wm_client_msg_t req) {
+void window_commit(handle_t client, channel_recv_result_t res) {
     for (int i = 0; i < num_clients; i++) {
         if (clients[i].pid == res.sender_pid) {
             clients[i].dirty = true;
@@ -172,6 +172,7 @@ void server_listen(handle_t *server) {
     if (channel_try_recv_msg(*server, &msg, sizeof(wm_client_msg_t), NULL, 0, &res) == 0) {
         switch (msg.type) {
             case CREATE: window_create(server, res, msg); break;
+            default: break;
         }
     }
 
@@ -179,7 +180,7 @@ void server_listen(handle_t *server) {
         if (channel_try_recv_msg(clients[i].handle, &msg, sizeof(wm_client_msg_t), NULL, 0, &res) != 0) continue;
 
         switch (msg.type) {
-            case COMMIT: window_commit(clients[i].handle, res, msg); break;
+            case COMMIT: window_commit(clients[i].handle, res); break;
             case RESIZE: {
                 vmo_unmap(clients[i].surface, clients[i].surface_w * clients[i].surface_h * sizeof(uint32));
                 clients[i].surface_w = msg.u.resize.width;
@@ -188,6 +189,7 @@ void server_listen(handle_t *server) {
                 clients[i].dirty = true;
                 break;
             }
+            default: break;
         }
     }
 }

@@ -14,8 +14,8 @@ void fb_fillrect(uint32 *fb, uint32 x, uint32 y, uint32 w, uint32 h, uint32 colo
     if (x + w > FB_W) w = FB_W - x;
     if (y + h > FB_H) h = FB_H - y;
     
-    for (int i = 0; i < w; i++) {
-        for (int j = 0; j < h; j++) {
+    for (uint32 i = 0; i < w; i++) {
+        for (uint32 j = 0; j < h; j++) {
             fb_putpixel(fb, x + i, y + j, colour);
         }
     }
