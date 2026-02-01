@@ -304,7 +304,7 @@ void server_listen(handle_t *server) {
     }
 }
 
-static void scale_nn_uint32(const uint32 *src, int sw, int sh, uint32 *dst, int dw, int dh) {
+static void scale_nearest_neighbour(const uint32 *src, int sw, int sh, uint32 *dst, int dw, int dh) {
     for (int y = 0; y < dh; y++) {
         int sy = (y * sh) / dh;
         if (sy >= sh) sy = sh - 1;
@@ -397,7 +397,7 @@ static int load_wallpaper(void) {
             wallpaper.loaded = false;
             return -1;
         }
-        scale_nn_uint32(tmp_pixels, img.width, img.height, scaled, FB_W, FB_H);
+        scale_nearest_neighbour(tmp_pixels, img.width, img.height, scaled, FB_W, FB_H);
         free(tmp_pixels);
         wallpaper.pixels = scaled;
         wallpaper.width = FB_W;
