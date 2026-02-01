@@ -2,6 +2,7 @@
 #include <io.h>
 #include <mem.h>
 #include <pixie.h>
+#include <dm.h>
 
 typedef struct px_surface {
     uint32 *data;
@@ -13,6 +14,12 @@ typedef struct px_window {
     px_surface_t *surface;
     handle_t ch;
 } px_window_t;
+
+typedef struct px_image {
+    uint32 width, height;
+    uint8 bpp;
+    uint8 *pixels;
+} px_image_t;
 
 #define MAX_TRIES 5
 
@@ -119,4 +126,48 @@ void px_update_window(px_window_t *win) {
     if (!win) return;
     wm_client_msg_t req = (wm_client_msg_t){ .type = COMMIT };
     channel_send(win->ch, &req, sizeof(req));
+}
+
+px_image_t *px_load_image(char *path) {
+    handle_t h = get_obj(INVALID_HANDLE, path, RIGHT_READ);
+    
+    stat_t st;
+    fstat(h, &st);
+    
+    uint8 *data = malloc(st.size);
+    handle_read(h, data, st.size);
+    
+    dm_image_t image;
+    int err = dm_load_image(data, st.size, &image);
+    if (err != 0) return NULL;
+
+    px_image_t *out = malloc(sizeof(px_image_t));
+    //cause C doesnt let you cast structs
+    out->width = image.width;
+    out->height = image.height;
+    out->pixels = image.pixels;
+
+    return out;
+}
+
+bool px_draw_pixel(px_surface_t *surface, uint32 x, uint32 y, uint32 colour) {
+    if (x >= surface->w || y >= surface->h) return false;
+    surface->data[y * surface->w + x] = colour;
+    return true;
+}
+
+bool px_draw_image(px_surface_t *surface, px_image_t *image, uint32 x, uint32 y) {
+    px_image_t src = *image;
+    for (uint32 i = 0; i < src.height; i++) {
+        for (uint32 j = 0; j < src.width; j++) {
+            uint8 r = *src.pixels++;
+            uint8 g = *src.pixels++;
+            uint8 b = *src.pixels++;
+            src.pixels++; // ignore extra A channel
+
+            uint32 colour = PX_RGB(r, g, b);
+
+            px_draw_pixel(surface, j + x, i + y, colour);
+        }
+    }
 }
