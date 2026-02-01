@@ -7,6 +7,7 @@
 typedef struct px_surface {
     uint32 *data;
     uint16 w, h;
+    bool dirty;
     handle_t handle;
 } px_surface_t;
 
@@ -73,6 +74,7 @@ px_window_t *px_create_window(char *name, uint16 width, uint16 height) {
         return NULL;
     }
 
+    win->surface->dirty = false;
     win->surface->w = res.u.configure.w;
     win->surface->h = res.u.configure.h;
     
@@ -108,10 +110,10 @@ uint16 px_get_surface_h(px_surface_t *surface) {
 
 void px_draw_rect(px_surface_t *surface, px_rect_t r) {
     if (!surface) return;
-    /* trivial clamp: if top-left outside surface, skip */
+    // trivial clamp: if top-left outside surface, skip
     if (r.x >= surface->w || r.y >= surface->h) return;
 
-    /* clamp width/height */
+    // clamp width/height
     if (r.x + r.w > surface->w) r.w = surface->w - r.x;
     if (r.y + r.h > surface->h) r.h = surface->h - r.y;
 
@@ -121,16 +123,20 @@ void px_draw_rect(px_surface_t *surface, px_rect_t r) {
             surface->data[base + xx] = r.c;
         }
     }
+
+    surface->dirty = true;
 }
 
 void px_update_window(px_window_t *win) {
     if (!win) return;
+    if (!win->surface->dirty) return;
     wm_client_msg_t req = (wm_client_msg_t){ .type = COMMIT };
     channel_send(win->ch, &req, sizeof(req));
 }
 
 px_image_t *px_load_image(char *path) {
     handle_t h = get_obj(INVALID_HANDLE, path, RIGHT_READ);
+    if (h == INVALID_HANDLE) return NULL;
     
     stat_t st;
     fstat(h, &st);
@@ -140,14 +146,18 @@ px_image_t *px_load_image(char *path) {
     
     dm_image_t image;
     int err = dm_load_image(data, st.size, &image);
-    if (err != 0) return NULL;
+    free(data);
+    if (err != 0) { handle_close(h); return NULL; }
 
     px_image_t *out = malloc(sizeof(px_image_t));
+    if (!out) { free(image.pixels); handle_close(h); return NULL; };
     //cause C doesnt let you cast structs
     out->width = image.width;
     out->height = image.height;
     out->pixels = image.pixels;
     out->pixel_format = image.pixel_format;
+    out->bpp = image.bpp;
+    handle_close(h);
 
     return out;
 }
@@ -155,10 +165,11 @@ px_image_t *px_load_image(char *path) {
 bool px_draw_pixel(px_surface_t *surface, uint32 x, uint32 y, uint32 colour) {
     if (x >= surface->w || y >= surface->h) return false;
     surface->data[y * surface->w + x] = colour;
-    return true;
+    surface->dirty = true;
 }
 
 bool px_draw_image(px_surface_t *surface, px_image_t *image, uint32 x, uint32 y) {
+    if (!image) return false;
     px_image_t src = *image;
     for (uint32 i = 0; i < src.height; i++) {
         for (uint32 j = 0; j < src.width; j++) {
@@ -179,4 +190,7 @@ bool px_draw_image(px_surface_t *surface, px_image_t *image, uint32 x, uint32 y)
             px_draw_pixel(surface, j + x, i + y, colour);
         }
     }
+
+    surface->dirty = true;
+    return true;
 }

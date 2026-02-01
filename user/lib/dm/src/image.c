@@ -27,7 +27,7 @@ int dm_rle_decode(const uint8 *src, size src_size, uint8 *dst, size dst_size, ui
         src_pos += bpp;
     }
 
-    return -1;
+    return 0;
 }
 
 int dm_load_image(const void *file, size file_size, dm_image_t *out) {
