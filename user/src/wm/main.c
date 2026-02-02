@@ -405,6 +405,14 @@ static int load_wallpaper(void) {
         wallpaper.loaded = true;
     }
 
+    //convert from RGBA32 to ARGB32
+    for (int i = 0; i < wallpaper.height * wallpaper.width; i++) {
+        uint8 r = (uint8)(wallpaper.pixels[i]);
+        uint8 g = (uint8)(wallpaper.pixels[i] >> 8);
+        uint8 b = (uint8)(wallpaper.pixels[i] >> 16);
+        wallpaper.pixels[i] = FB_RGB(r, g, b);
+    }
+
     INFO("Wallpaper loaded (scaled to %ux%u)\n", wallpaper.width, wallpaper.height);
     return 0;
 }
