@@ -83,7 +83,7 @@ void sched_init(void) {
     pc->idle_thread = thread_create(kernel, idle_thread_entry, NULL);
     if (!pc->idle_thread) {
         printf("[sched] CRITICAL: failed to create idle thread for BSP!\n");
-        for(;;) arch_halt();
+        kpanic(NULL, "FATAL: failed to create idle kernel thread!\n");
     }
     pc->idle_thread->state = THREAD_STATE_READY;
 }
@@ -270,7 +270,7 @@ void sched_exit(void) {
     schedule();
     
     //should never reach here
-    for(;;) arch_halt();
+    kpanic(NULL, "FATAL: Scheduler returned!\n");
 }
 
 //ISR-safe preemption 
