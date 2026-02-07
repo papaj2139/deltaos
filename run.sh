@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 #config
@@ -85,16 +85,22 @@ find_ovmf() {
         "/usr/share/ovmf/x64"
         "/usr/share/edk2/x64"
         "/usr/share/edk2-ovmf/x64"
-        "/usr/share/ovmf/"
-        "/usr/share/edk2/"
-        "/usr/share/edk2-ovmf/"
+        "/usr/share/edk2"
+        "/usr/share/ovmf"
+        "/usr/share/edk2-ovmf"
     )
 
-    for dir in $ovmf_dirs
-    do
-        find $dir -name OVMF_CODE.4m.fd > /dev/null && OVMF_CODE="$dir/OVMF_CODE.4m.fd"
+    for dir in "${ovmf_dirs[@]}"; do
+        local found
+        found=$(find "$dir" -maxdepth 2 -type f -name "OVMF_CODE.4m.fd" 2>/dev/null)
+        if [[ -n "$found" ]]; then
+            OVMF_CODE="$found"
+            stat "$OVMF_CODE"
+            return
+        fi
     done
 }
+
 
 main() {
     #dependency check
