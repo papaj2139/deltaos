@@ -156,7 +156,7 @@ intptr sys_fstat(handle_t h, stat_t *st);
 intptr sys_readdir(handle_t h, dirent_t *entries, uint32 count, uint32 *index);
 intptr sys_chdir(const char *path);
 intptr sys_getcwd(char *buf, size bufsize);
-intptr sys_mknode(const char *path, uint32 mode);
+intptr sys_mknode(const char *path, uint32 type);
 intptr sys_remove(const char *path);
 intptr sys_handle_read(handle_t h, void *buf, size len);
 intptr sys_handle_write(handle_t h, const void *buf, size len);

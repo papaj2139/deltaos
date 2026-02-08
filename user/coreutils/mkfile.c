@@ -11,4 +11,6 @@ int main(int argc, char**argv) {
         printf("Failed to create path '%s' (error %d)\n", argv[1], res);
         return res;
     }
+
+    return 0;
 }
