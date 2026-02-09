@@ -18,7 +18,7 @@ LDFLAGS += -T arch/$(ARCH)/linker.ld
 
 #find assembly sources excluding the trampoline binary source
 ASM_SRCS := $(shell find . -name '*.asm' ! -name 'trampoline_bin.asm')
-C_SRCS := $(shell find -name '*.c')
+C_SRCS := $(shell find . -name '*.c' ! -path './drivers/*') drivers/init.c
 
 ASM_OBJS := $(patsubst %.asm,%.o,$(ASM_SRCS))
 C_OBJS := $(patsubst %.c,%.o,$(C_SRCS))
@@ -29,7 +29,15 @@ TRAMPOLINE_BIN := arch/amd64/smp/trampoline.bin
 
 .PHONY: all clean
 
-all: $(KERNEL)
+all: drivers/drivers_enabled.mk $(KERNEL)
+
+#generate the driver list
+drivers/drivers_enabled.mk: drivers/registry.toml
+	../tools/gen_driver_list.py
+
+include drivers/drivers_enabled.mk
+
+OBJS += $(addprefix drivers/, $(DRIVERS:.c=.o))
 
 # Build kernel
 $(KERNEL): $(OBJS)
@@ -53,4 +61,5 @@ arch/amd64/smp/trampoline.o: arch/amd64/smp/trampoline.asm $(TRAMPOLINE_BIN)
 
 clean:
 	rm -f $(KERNEL) $(TRAMPOLINE_BIN)
-	find . -type f -name *.o -exec rm {} \;
+	find . -type f -name *.o -delete
+	find . -type f -name drivers_enabled* -delete

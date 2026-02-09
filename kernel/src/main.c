@@ -3,14 +3,7 @@
 #include <arch/timer.h>
 #include <arch/interrupts.h>
 #include <arch/mmu.h>
-#include <drivers/fb.h>
-#include <drivers/console.h>
-#include <drivers/keyboard.h>
-#include <drivers/mouse.h>
-#include <drivers/rtc.h>
-#include <drivers/nvme.h>
-#include <drivers/serial.h>
-#include <drivers/vt/vt.h>
+#include <drivers/init.h>
 #include <lib/string.h>
 #include <lib/io.h>
 #include <lib/mem.h>
@@ -251,19 +244,9 @@ void kernel_main(const char *cmdline) {
         ns_register("$devices", devs);
         object_deref(devs);
     }
-    
-    //initialize drivers
-    fb_init();
-    fb_init_backbuffer();
-    con_init();
-    vt_init();
-    keyboard_init();
-    mouse_init();
-    nvme_init();
-    serial_init_object();
-    rtc_init();
-    kernel_info_init();
-    klog_init();
+
+    //initialise drivers
+    init_drivers();
     
     //initialize filesystems
     tmpfs_init();
