@@ -1,3 +1,4 @@
 *.o
 *.elf
 *.bin
+drivers_enabled.*

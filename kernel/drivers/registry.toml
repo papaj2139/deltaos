@@ -1,0 +1,11 @@
+[drivers]
+console = true
+fb = true
+gpt = true
+keyboard = true
+mouse = true
+nvme = true
+pci = true
+rtc = true
+serial = true
+vt = true
