@@ -3,9 +3,6 @@
 
 #include <types.h>
 
-#define FB_W 1280
-#define FB_H 800
-
 #define FB_RGB(r, g, b) ((uint32)((b) | ((g) << 8) | ((r) << 16)))
 
 #define FB_BLACK   FB_RGB(0, 0, 0)

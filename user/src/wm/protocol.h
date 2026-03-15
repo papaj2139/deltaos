@@ -31,7 +31,7 @@ typedef struct {
     union {
         bool ack;
         struct {
-            uint16 x, y, w, h;
+            uint16 x, y, w, h, bpp;
         } configure;
         struct {
             kbd_event_t data;
@@ -48,7 +48,7 @@ typedef struct {
     handle_t handle;
     uint32 *surface;
     handle_t vmo;
-    uint16 surface_w, surface_h;
+    uint16 surface_w, surface_h, surface_bpp;
     uint16 win_w, win_h;
     uint16 x, y;
     bool dirty;

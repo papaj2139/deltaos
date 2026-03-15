@@ -6,7 +6,7 @@
 
 typedef struct px_surface {
     uint32 *data;
-    uint16 w, h;
+    uint16 w, h, bpp;
     bool dirty;
     handle_t handle;
 } px_surface_t;
@@ -77,10 +77,11 @@ px_window_t *px_create_window(char *name, uint16 width, uint16 height) {
     win->surface->dirty = false;
     win->surface->w = res.u.configure.w;
     win->surface->h = res.u.configure.h;
+    win->surface->bpp = res.u.configure.bpp;
     
     win->surface->handle = get_obj(INVALID_HANDLE, path, RIGHT_WRITE | RIGHT_MAP);
     
-    size surface_size = (size)win->surface->w * (size)win->surface->h * sizeof(uint32);
+    size surface_size = (size)win->surface->w * (size)win->surface->h * (size)win->surface->bpp;
     vmo_resize(win->surface->handle, surface_size);
     win->surface->data = vmo_map(win->surface->handle, NULL, 0, surface_size, RIGHT_WRITE | RIGHT_MAP);
     if (!win->surface->data) {

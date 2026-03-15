@@ -115,7 +115,7 @@ static struct db_boot_info *build_boot_info(
         ptr += DB_ALIGN8(tag->size);
     }
     
-    //dB_TAG_FRAMEBUFFER
+    //DB_TAG_FRAMEBUFFER
     if ((req_flags & DB_REQ_FRAMEBUFFER) && gop) {
         struct db_tag_framebuffer *tag = (struct db_tag_framebuffer *)ptr;
         tag->type = DB_TAG_FRAMEBUFFER;
