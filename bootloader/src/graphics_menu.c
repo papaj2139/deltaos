@@ -88,6 +88,22 @@ void gfx_menu_run(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop) {
     uint32_t start_index = 0;
     uint32_t max_display = 20;
     
+    // we do this to ensure that draw_gfx_menu
+    // doesn't receive stale fb data
+    // effectively just refreshes the fb
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+    UINTN size;
+    EFI_STATUS status = gop->QueryMode(gop, gop->Mode->Mode, &size, &info);
+    if (!EFI_ERROR(status)) {
+        gfx_init(
+            gop->Mode->FrameBufferBase,
+            info->HorizontalResolution,
+            info->VerticalResolution,
+            info->PixelsPerScanLine
+        );
+        gBS->FreePool(info);
+    }
+
     draw_gfx_menu(gop, selected, start_index, max_display);
     
     EFI_INPUT_KEY key;
