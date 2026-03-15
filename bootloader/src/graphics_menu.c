@@ -7,6 +7,17 @@
 extern EFI_SYSTEM_TABLE *gST;
 extern EFI_BOOT_SERVICES *gBS;
 
+// there's usually __builtin_popcount
+// but that depends on glibc :P
+static inline unsigned popcount_32(uint32_t x) {
+    unsigned c = 0;
+    while (x) {
+        x &= x - 1;
+        c++;
+    }
+    return c;
+}
+
 static void draw_gfx_menu(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, uint32_t selected_mode, uint32_t start_index, uint32_t max_display) {
     uint32_t char_h = con_get_char_height();
     uint32_t char_w = con_get_char_width();
@@ -33,7 +44,22 @@ static void draw_gfx_menu(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, uint32_t selected_m
         uint32_t y = entry_y + display_count * entry_spacing;
         
         char buf[128];
-        snprintf(buf, sizeof(buf), "%u: %ux%u (Pitch: %u)", i, info->HorizontalResolution, info->VerticalResolution, info->PixelsPerScanLine);
+        uint32_t bpp;
+        switch (info->PixelFormat) {
+            case PixelRedGreenBlueReserved8BitPerColor:
+            case PixelBlueGreenRedReserved8BitPerColor:
+                bpp = 4; break;
+            case PixelBitMask: {
+                uint32_t mask = info->PixelInformation.RedMask | 
+                                info->PixelInformation.BlueMask | 
+                                info->PixelInformation.GreenMask | 
+                                info->PixelInformation.ReservedMask;
+                bpp = (popcount_32(mask) + 7) / 8;
+                break;
+            }
+            default: bpp = 0; break;
+        }
+        snprintf(buf, sizeof(buf), "%u: %ux%u (Pitch: %u)", i, info->HorizontalResolution, info->VerticalResolution, info->HorizontalResolution * bpp);
         
         if (i == selected_mode) {
             con_set_color(COLOR_HIGHLIGHT, 0);
