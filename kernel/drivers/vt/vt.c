@@ -7,6 +7,7 @@
 #include <arch/cpu.h>
 #include <string.h>
 #include <lib/io.h>
+#include <lib/string.h>
 #include <drivers/init.h>
 
 //active VT index
@@ -286,6 +287,27 @@ void vt_putc(vt_t *vt, char c) {
 
 void vt_write(vt_t *vt, const char *s, size len) {
     for (size i = 0; i < len; i++) {
+        if (s[i] == '\e') {
+            i++;
+            if (s[i] == 'f' || s[i] == 'b') {
+                // SET COLOUR
+                // args: 0xNNNNNN
+                if (len - i < 7) continue;  // ensures we have enough characters
+
+                char mode = s[i++];
+                uint32 colour =
+                    (ctoh(s[i++]) << 20)
+                    | (ctoh(s[i++]) << 16)
+                    | (ctoh(s[i++]) << 12)
+                    | (ctoh(s[i++]) << 8)
+                    | (ctoh(s[i++]) << 4)
+                    | (ctoh(s[i++]));
+
+                if (mode == 'f') vt->fg_color = colour;
+                else vt->bg_color = colour;
+            }
+        }
+        
         vt_putc(vt, s[i]);
     }
 }

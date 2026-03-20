@@ -3,6 +3,7 @@
 
 #include <arch/types.h>
 
+word ctoh(char c);
 word atoi(const char *p);
 size strlen(const char *s);
 int strcmp(const char *s1, const char *s2);

@@ -44,7 +44,7 @@ jobs:
               fi
 
               if [[ "$line" =~ ^\+ ]]; then
-                content="${line:1}"  # strip leading '+'
+                content="${line:1}"
 
                 if [[ "$content" =~ TODO ]]; then
                   todo_text=$(echo "$content" | sed -n 's/.*\(TODO.*\)/\1/p')
@@ -77,9 +77,11 @@ jobs:
                 continue
             fi
 
+            body=$(printf "Found in PR #${{ github.event.pull_request.number }}:\n\n%s" "$link")
+
             gh issue create \
                 --title "$title" \
-                --body "Found in PR #${{ github.event.pull_request.number }}:\n\n$link" \
+                --body "$body" \
                 --label "todo"
             
           done < todos_parsed.txt
