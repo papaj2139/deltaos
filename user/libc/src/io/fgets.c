@@ -2,6 +2,10 @@
 #include <stdio.h>
 
 char* fgets(char* buf, int bufsz, FILE* f) {
+    if (bufsz <= 0) {
+        return NULL;
+    }
+    
     int c;
     size_t pos = 0;
     

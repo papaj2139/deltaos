@@ -26,7 +26,6 @@ int create_user(const char* username, const char* pt_pwd) {
     
     FILE* passwd = fopen("/etc/passwd", "aw");
     if (passwd == NULL) {
-        fclose(passwd);
         return -1;
     }
     
@@ -88,7 +87,7 @@ enum verif_stat verify_user(const char* username, const char* pt_pwd) {
     sha256(pt_pwd, strlen(pt_pwd), shabuf);
     sha256_to_hex(shabuf, shahex);
     
-    if (strcmp(passwd->pwd_hash, shahex) == 0) {
+    if (ct_memcmp(passwd->pwd_hash, shahex, 64) == 0) {
         code = V_VALID;
     } else {
         code = V_EWPWD;
