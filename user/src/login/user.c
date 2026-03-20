@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <fs.h>
+#include <system.h>
 
 #include "user.h"
 #include "passwd.h"
@@ -37,52 +38,63 @@ int create_user(const char* username, const char* pt_pwd) {
         }
     }
     
-    FILE* passwd = fopen("/conf/passwd", "aw");
-    if (passwd == NULL) {
+    handle_t passwd = get_obj(INVALID_HANDLE, "$files/conf/passwd", RIGHT_WRITE | RIGHT_READ);
+    if (passwd == INVALID_HANDLE) {
+        return -1;
+    }
+    if (handle_seek(passwd, 0, HANDLE_SEEK_END) < 0) {
+        handle_close(passwd);
         return -1;
     }
     
     char* pwd_str = serialize_passwd(&pwd);
     if (pwd_str == NULL) {
-        fclose(passwd);
+        handle_close(passwd);
         return -1;
     }
     
-    if (fprintf(passwd, "%s\n", pwd_str) != (strlen(pwd_str) + 1)) {
-        fclose(passwd);
+    size_t pwdstr_len = strlen(pwd_str) + 1;
+    char pwdstr_nl[pwdstr_len];
+    if (snprintf(pwdstr_nl, pwdstr_len, "%s\n", pwd_str) != pwdstr_len) {
+        handle_close(passwd);
+        return -1;
+    }
+    
+    if (handle_write(passwd, pwdstr_nl, pwdstr_len) != pwdstr_len) {
+        handle_close(passwd);
         return -1;
     }
     
     free(pwd_str);
-    fclose(passwd);
+    handle_close(passwd);
     
     return 0;
 }
 
 // the struct returnd will be malloc'd, free it when your done!
 struct passwd* get_user(const char* username) {
-    FILE* passwd = fopen("/conf/passwd", "r");
-    if (passwd == NULL) {
+    handle_t hdl = get_obj(INVALID_HANDLE, "$files/conf/passwd", RIGHT_READ);
+    if (hdl == INVALID_HANDLE) {
         return NULL;
     }
     
     const size_t line_sz = 256 + 1 + 64 + 2; // usrname + delim + pwdhash + endings
     
     char line[line_sz];
-    while (fgets(line, line_sz, passwd) != NULL) {
+    while (handle_getstr(line, line_sz, hdl) != NULL) {
         struct passwd* pwd = deserialize_passwd(line);
         if (pwd == NULL) {
             continue;
         }
         if (strcmp(pwd->username, username) == 0) {
-            fclose(passwd);
+            handle_close(hdl);
             return pwd;
         } else {
             free(pwd);
         }
     }
     
-    fclose(passwd);
+    handle_close(hdl);
     return NULL;
 }
 

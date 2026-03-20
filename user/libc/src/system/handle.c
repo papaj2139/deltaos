@@ -1,5 +1,6 @@
 #include <sys/syscall.h>
 #include <types.h>
+#include <system.h>
 
 //get object handle from namespace
 //parent: parent handle or INVALID_HANDLE (-1) for root namespace
@@ -36,4 +37,41 @@ int32 handle_dup(int32 h, uint32 new_rights) {
 
 int object_get_info(int32 h, uint32 topic, void *ptr, uint64 len) {
     return __syscall4(SYS_OBJECT_GET_INFO, (long)h, (long)topic, (long)ptr, (long)len);
+}
+
+//read char from handle
+int handle_getchar(int32 hdl) {
+    if (hdl == INVALID_HANDLE) return -1;
+    unsigned char c;
+    int code;
+    if ((code = handle_read(hdl, &c, 1)) < 0) {
+        return code;
+    }
+    if (code == 0) return -1;
+    return c;
+}
+
+// read string from handle
+char* handle_getstr(char* buf, int bufsz, int32 f) {
+    if (bufsz <= 0) {
+        return NULL;
+    }
+    
+    int c;
+    size_t pos = 0;
+    
+    while (((c = handle_getchar(f)) != -1) && 
+          (pos < (size_t)(bufsz - 1))) {
+        buf[pos++] = (char)c;
+        if (c == '\n') {
+            break;
+        }
+    }
+    
+    if (pos == 0 && c == -1) {
+        return NULL;
+    }
+    
+    buf[pos] = '\0';
+    return buf;
 }

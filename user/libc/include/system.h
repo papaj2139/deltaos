@@ -42,6 +42,8 @@ int handle_read(handle_t h, void *buf, int len);
 int handle_write(handle_t h, const void *buf, int len);
 int handle_close(handle_t h);
 handle_t handle_dup(handle_t h, uint32 new_rights);
+int handle_getchar(handle_t hdl);
+char* handle_getstr(char* buf, int bufsz, handle_t f);
 
 #define HANDLE_SEEK_SET     0
 #define HANDLE_SEEK_OFF     1
