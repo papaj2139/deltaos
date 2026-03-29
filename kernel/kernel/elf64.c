@@ -167,6 +167,10 @@ int elf_load(const void *data, size len, elf_load_info_t *info) {
 
     //fill in load info
     if (info) {
+        if (ehdr->e_entry < min_vaddr || ehdr->e_entry >= max_vaddr) {
+            pmm_free((void *)alloc_addr, pages);
+            return ELF_ERR_INVALID;
+        }
         info->phys_base = alloc_addr;
         info->pages = pages;
         info->virt_base = aligned_min_vaddr;
