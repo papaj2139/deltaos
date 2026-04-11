@@ -572,10 +572,15 @@ void kbind_kill(void) {
     client_remove_at(focused);
 }
 
+void kbind_test(void) {
+    spawn("/system/binaries/app", 0, NULL);
+}
+
 keybind_t keybinds[] = (keybind_t[]){
     { KBD_MOD_ALT, 'm', kbind_exit },
     { KBD_MOD_ALT, '\t', kbind_cycle },
     { KBD_MOD_ALT | KBD_MOD_SHIFT, 'Q', kbind_kill },
+    { KBD_MOD_ALT, 'a', kbind_test }
 };
 
 void handle_input() {
