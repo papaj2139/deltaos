@@ -22,6 +22,12 @@ void ethernet_recv(netif_t *nif, void *data, size len) {
             arp_recv(nif, payload, payload_len);
             break;
         case ETH_TYPE_IPV4:
+            if (payload_len >= IPV4_HEADER_MIN_LEN) {
+                ipv4_header_t *ip = (ipv4_header_t *)payload;
+                if (((ip->ver_ihl >> 4) & 0xF) == 4) {
+                    arp_seed(ip->src_ip, eth->src);
+                }
+            }
             ipv4_recv(nif, payload, payload_len);
             break;
         case ETH_TYPE_IPV6:

@@ -22,8 +22,17 @@ static bool netif_has_ipv6_route(const netif_t *nif) {
     return nif && !ipv6_addr_is_unspecified(nif->ipv6_gateway);
 }
 
+static bool netif_is_configured(const netif_t *nif) {
+    return nif && (nif->gateway != 0 || nif->ip_addr != 0 || nif->dns_server != 0 ||
+                   netif_has_ipv6_route(nif));
+}
+
 static netif_t *net_pick_default_locked(void) {
     netif_t *fallback = default_netif ? default_netif : netif_list;
+
+    if (netif_is_configured(default_netif)) {
+        return default_netif;
+    }
 
     for (netif_t *nif = netif_list; nif; nif = nif->next) {
         if (nif->gateway != 0) {
@@ -130,6 +139,8 @@ static void net_boot_worker(void *arg) {
         return;
     }
 
+    bool have_primary = false;
+
     for (size i = count; i > 0; i--) {
         netif_t *nif = order[i - 1];
 
@@ -151,7 +162,12 @@ static void net_boot_worker(void *arg) {
             ndp_discover_router(nif);
         }
 
-        break;
+        if (!have_primary) {
+            flags = spinlock_irq_acquire(&netif_lock);
+            default_netif = nif;
+            spinlock_irq_release(&netif_lock, flags);
+            have_primary = true;
+        }
     }
 
     flags = spinlock_irq_acquire(&netif_lock);

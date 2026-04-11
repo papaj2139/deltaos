@@ -24,6 +24,18 @@ typedef struct __attribute__((packed)) {
     uint16 tcp_len;
 } tcp_pseudoheader_t;
 
+static uint32 tcp_checksum_add_be(const uint8 *data, size len, uint32 sum) {
+    while (len > 1) {
+        sum += ((uint32)data[0] << 8) | data[1];
+        data += 2;
+        len -= 2;
+    }
+    if (len == 1) {
+        sum += (uint32)data[0] << 8;
+    }
+    return sum;
+}
+
 
 static void tcp_addr_from_ipv4(net_addr_t *addr, uint32 ip) {
     addr->family = NET_ADDR_FAMILY_IPV4;
@@ -166,22 +178,23 @@ static int tcp_checksum(const net_addr_t *src_addr, const net_addr_t *dst_addr,
         return 0;
     }
 
-    tcp_pseudoheader_t pseudo;
-    pseudo.src_ip = src_addr->addr.ipv4;
-    pseudo.dst_ip = dst_addr->addr.ipv4;
-    pseudo.zero = 0;
-    pseudo.protocol = IPPROTO_TCP;
-    pseudo.tcp_len = htons((uint16)tcp_len);
-
     uint32 sum = 0;
-    const uint16 *w1 = (const uint16 *)&pseudo;
-    for (size i = 0; i < sizeof(pseudo) / 2; i++) sum += w1[i];
-    const uint16 *w2 = (const uint16 *)tcp_data;
-    for (size i = 0; i < tcp_len / 2; i++) sum += w2[i];
-    if (tcp_len % 2) {
-        const uint8 *p2 = (const uint8 *)tcp_data;
-        sum += p2[tcp_len - 1];
-    }
+    uint8 pseudo[12];
+    pseudo[0] = (uint8)(src_addr->addr.ipv4 & 0xFF);
+    pseudo[1] = (uint8)((src_addr->addr.ipv4 >> 8) & 0xFF);
+    pseudo[2] = (uint8)((src_addr->addr.ipv4 >> 16) & 0xFF);
+    pseudo[3] = (uint8)((src_addr->addr.ipv4 >> 24) & 0xFF);
+    pseudo[4] = (uint8)(dst_addr->addr.ipv4 & 0xFF);
+    pseudo[5] = (uint8)((dst_addr->addr.ipv4 >> 8) & 0xFF);
+    pseudo[6] = (uint8)((dst_addr->addr.ipv4 >> 16) & 0xFF);
+    pseudo[7] = (uint8)((dst_addr->addr.ipv4 >> 24) & 0xFF);
+    pseudo[8] = 0;
+    pseudo[9] = IPPROTO_TCP;
+    pseudo[10] = (uint8)(tcp_len >> 8);
+    pseudo[11] = (uint8)tcp_len;
+
+    sum = tcp_checksum_add_be(pseudo, sizeof(pseudo), sum);
+    sum = tcp_checksum_add_be((const uint8 *)tcp_data, tcp_len, sum);
     while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
     *out_sum = ~sum;
     return 0;
@@ -244,7 +257,7 @@ static int tcp_send_segment(tcp_conn_t *conn, uint8 flags,
         return chk_err;
     }
     if (checksum == 0) checksum = 0xFFFF;
-    memcpy(packet + 16, &checksum, sizeof(checksum));
+    tcp_write_u16(packet + 16, checksum);
 
     //advance sequence number
     if (flags & TCP_SYN) conn->snd_nxt++;
@@ -285,7 +298,7 @@ static void tcp_send_rst(netif_t *nif, const net_addr_t *src_addr,
         return;
     }
     if (checksum == 0) checksum = 0xFFFF;
-    memcpy(packet + 16, &checksum, sizeof(checksum));
+    tcp_write_u16(packet + 16, checksum);
 
     if (dst_addr->family == NET_ADDR_FAMILY_IPV4) {
         ipv4_send(nif, dst_addr->addr.ipv4, IPPROTO_TCP, packet, sizeof(tcp_header_t));
@@ -321,7 +334,7 @@ static void tcp_recv_common(netif_t *nif, const net_addr_t *src_addr,
     
     void *payload = (uint8 *)data + data_off;
     size payload_len = len - data_off;
-    
+
     irq_state_t lock_flags = spinlock_irq_acquire(&tcp_lock);
     tcp_conn_t *conn = tcp_find_conn(dst_addr, dst_port, src_addr, src_port);
     
@@ -688,6 +701,7 @@ tcp_conn_t *tcp_accept(tcp_conn_t *listener) {
             }
         }
         spinlock_irq_release(&tcp_lock, scan_flags);
+        net_poll();
         sched_yield();
     }
     
