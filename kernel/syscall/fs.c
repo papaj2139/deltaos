@@ -71,36 +71,66 @@ bulk_fault:
 
 intptr sys_handle_read(handle_t h, void *buf, size len) {
     if (!buf || len == 0) return -1;
-    if (len > MAX_HANDLE_IO) return -1;
-    void *kbuf = kmalloc(len);
-    if (!kbuf) return -1;
 
-    ssize result = handle_read(h, kbuf, len);
-    if (result > 0) {
-        if (copy_to_user_bytes(buf, kbuf, (size)result) != 0) {
+    intptr total = 0;
+    uint8 *ubuf = (uint8*)buf;
+
+    while (len > 0) {
+        size chunk = len > MAX_HANDLE_IO ? MAX_HANDLE_IO : len;
+
+        void *kbuf = kmalloc(chunk);
+        if (!kbuf) return total > 0 ? total : -1;
+
+        ssize r = handle_read(h, kbuf, chunk);
+        if (r <= 0) {
             kfree(kbuf);
-            return -1;
+            return total > 0 ? total : r;
         }
+
+        if (copy_to_user_bytes(ubuf + total, kbuf, (size)r) != 0) {
+            kfree(kbuf);
+            return total > 0 ? total : -1;
+        }
+
+        kfree(kbuf);
+        total += r;
+        if ((size)r < chunk) break;
+        len -= r;
     }
 
-    kfree(kbuf);
-    return result;
+    return total;
 }
 
 intptr sys_handle_write(handle_t h, const void *buf, size len) {
     if (!buf || len == 0) return -1;
-    if (len > MAX_HANDLE_IO) return -1;
-    void *kbuf = kmalloc(len);
-    if (!kbuf) return -1;
 
-    if (copy_user_bytes(buf, kbuf, len) != 0) {
+    intptr total = 0;
+    const uint8 *ubuf = (const uint8*)buf;
+
+    while (len > 0) {
+        size chunk = len > MAX_HANDLE_IO ? MAX_HANDLE_IO : len;
+
+        void *kbuf = kmalloc(chunk);
+        if (!kbuf) return total > 0 ? total : -1;
+
+        if (copy_user_bytes(ubuf + total, kbuf, chunk) != 0) {
+            kfree(kbuf);
+            return total > 0 ? total : -1;
+        }
+
+        intptr r = handle_write(h, kbuf, chunk);
         kfree(kbuf);
-        return -1;
+
+        if (r <= 0) {
+            return total > 0 ? total : r;
+        }
+
+        total += r;
+        if ((size)r < chunk) break;
+        len -= r;
     }
 
-    intptr result = handle_write(h, kbuf, len);
-    kfree(kbuf);
-    return result;
+    return total;
 }
 
 intptr sys_handle_seek(handle_t h, size offset, int mode) {
