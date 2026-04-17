@@ -30,10 +30,6 @@ static void cmd_help(void) {
     puts("Commands: help, echo, cd, pwd, spawn, wm, dir, exit\n");
 }
 
-static void cmd_echo(char *args) {
-    if (args) puts(args);
-    puts("\n");
-}
 
 static void cmd_spawn(char *path) {
     if (!path) {
@@ -79,8 +75,6 @@ static void process_command(char *line) {
     
     if (streq(cmd, "help")) {
         cmd_help();
-    } else if (streq(cmd, "echo")) {
-        cmd_echo(strtok(NULL, "\n"));
     } else if (streq(cmd, "cd")) {
         cmd_cd(strtok(NULL, " \t\n"));
     } else if (streq(cmd, "pwd")) {
