@@ -122,6 +122,7 @@ ld:
 	cp ld/ld.so ../initrd/system/libraries/
 
 clean:
+	find . -type f -name '*.o' -delete
 	rm -f *.o *.bin libc.a libc.so
 	find . -name '*.[s]o' -delete
 	rm -f ../initrd/system/libraries/lib*.so

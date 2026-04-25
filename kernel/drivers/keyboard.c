@@ -6,6 +6,7 @@
 #include <obj/rights.h>
 #include <ipc/channel.h>
 #include <proc/process.h>
+#include <proc/event.h>
 #include <proc/wait.h>
 #include <mm/kheap.h>
 #include <lib/string.h>
@@ -212,6 +213,16 @@ void keyboard_irq(void) {
     char ascii = 0;
     if (!released) {
         ascii = (mods & KBD_MOD_SHIFT) ? scancodes_shift[code] : scancodes_normal[code];
+    }
+
+    if (!released && (mods & KBD_MOD_CTRL) && (ascii == 'c' || ascii == 'C')) {
+        uint64 fg_pid = proc_get_console_foreground_pid();
+        if (fg_pid != 0) {
+            process_t *fg = process_find(fg_pid);
+            if (fg) {
+                proc_post_event(fg, PROC_EVENT_INTERRUPT);
+            }
+        }
     }
     
     //push to channel (for userspace/consumers)

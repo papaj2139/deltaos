@@ -17,6 +17,8 @@
 #include <mm/kheap.h>
 #include <proc/sched.h>
 #include <proc/process.h>
+#include <proc/thread.h>
+#include <proc/event.h>
 
 struct idt_entry {
 	uint16    isr_low;      // The lower 16 bits of the ISR's address
@@ -259,6 +261,13 @@ void interrupt_handler(uint64 vector, uint64 error_code, uint64 rip, interrupt_f
 
         if (!handled && irq < 16) {
             printf("Unhandled IRQ: 0x%X (vector 0x%X)\n", irq + 32, vector);
+        }
+
+        if (from_usermode) {
+            thread_t *current = thread_current();
+            if (current) {
+                proc_deliver_pending(current);
+            }
         }
 
         return;

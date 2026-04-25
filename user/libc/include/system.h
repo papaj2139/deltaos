@@ -23,6 +23,22 @@ typedef int32 handle_t;
 //invalid handle sentinel
 #define INVALID_HANDLE      (-1)
 
+typedef uint64 proc_event_mask_t;
+
+typedef enum {
+    PROC_EVENT_TERMINATE = 0, //unconditional process termination request
+    PROC_EVENT_INTERRUPT = 1, //foreground interrupt like ctrl+C
+    PROC_EVENT_CHILD     = 2, //one of this process' children changed state
+    PROC_EVENT_WAKE      = 3, //reserved for breaking blocking waits
+    PROC_EVENT_USER0     = 4, //application-defined event
+    PROC_EVENT_USER1     = 5, //application-defined event
+    PROC_EVENT_COUNT
+} proc_event_t;
+
+#define PROC_EVENT_BIT(event) (1ULL << (event))
+
+typedef void (*proc_event_handler_t)(uint32 event);
+
 typedef enum {
     CONTEXT_VALUE_STRING = 1,
     CONTEXT_VALUE_I64 = 2,
@@ -56,6 +72,14 @@ int spawn(char *path, int argc, char **argv);
 int spawn_ctx(char *path, int argc, char **argv, const context_spawn_entry_t *entries, size entry_count);
 int wait(int pid);
 uint64 get_ticks(void);
+//process async event control
+int proc_send_event(int pid, uint32 event);
+int proc_set_event_handler(uint32 event, proc_event_handler_t handler, uint32 flags);
+int proc_mask_events(proc_event_mask_t mask);
+int proc_unmask_events(proc_event_mask_t mask);
+int proc_get_pending_events(proc_event_mask_t *out_mask);
+int proc_event_return(void);
+int proc_set_console_foreground(int pid);
 
 //capability-based process creation (Zircon-style)
 int32 process_create(const char *name);              //create suspended process, returns handle

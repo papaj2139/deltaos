@@ -16,6 +16,7 @@ static void shell_reset_terminal(void) {
 }
 
 static void shell_show_prompt(void) {
+    proc_set_console_foreground(0);
     shell_reset_terminal();
 
     char cwd[256];
@@ -41,8 +42,10 @@ static void cmd_spawn(char *path) {
     if (child < 0) {
         printf("spawn: failed to start %s (error %d)\n", path, child);
     } else {
+        proc_set_console_foreground(child);
         printf("spawn: started %s (PID %d)\n", path, child);
         int code = wait(child);
+        proc_set_console_foreground(0);
         shell_reset_terminal();
         printf("spawn: child died with code %d\n", code);
     }
@@ -107,7 +110,9 @@ static void process_command(char *line) {
             if (child < 0) {
                 printf("Unknown command: %s\n", cmd);
             } else {
+                proc_set_console_foreground(child);
                 int code = wait(child);
+                proc_set_console_foreground(0);
                 shell_reset_terminal();
                 if (code == 141) {
                     printf("Page fault; process killed.\n");
@@ -129,6 +134,7 @@ int main(int argc, char *argv[]) {
     }
     
     kbd_flush();
+    proc_set_console_foreground(0);
     puts("[shell] ready. Type 'help' for commands.\n");
     
     char buffer[128];
@@ -137,9 +143,24 @@ int main(int argc, char *argv[]) {
     //show initial prompt with CWD
     shell_show_prompt();
     while (1) {
-        char c = kbd_getchar();
+        kbd_event_t ev;
+        if (kbd_read(&ev) < 0) continue;
+        if (!ev.pressed) continue;
+
+        //for ctrl+C in the shell f the line is empty do nothing otherwise erase the current input
+        if ((ev.mods & KBD_MOD_CTRL) && (ev.codepoint == 'c' || ev.codepoint == 'C')) {
+            if (pos > 0) {
+                while (pos > 0) {
+                    pos--;
+                    puts("\b \b");
+                }
+            }
+            continue;
+        }
+
+        char c = (char)ev.codepoint;
         if (c == 0) continue;
-        
+
         if (c == '\b') {
             if (pos > 0) {
                 pos--;
@@ -147,9 +168,9 @@ int main(int argc, char *argv[]) {
             }
             continue;
         }
-        
+
         putc(c);
-        
+
         if (c == '\n' || pos >= 126) {
             buffer[pos] = '\0';
             process_command(buffer);

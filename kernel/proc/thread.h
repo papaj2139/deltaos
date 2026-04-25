@@ -4,6 +4,7 @@
 #include <arch/types.h>
 #include <arch/context.h>
 #include <arch/fpu.h>
+#include <proc/event.h>
 #include <lib/spinlock.h>
 #include <obj/object.h>
 
@@ -38,9 +39,27 @@ typedef struct thread {
     //usermode state for initial entry (only for user threads)
     arch_context_t user_context;
 
+    //saved userspace state while an async event handler is running
+    arch_context_t saved_event_context;
+
     //saved x87/SSE state for this thread
     arch_fpu_state_t fpu_state;
     uint8 fpu_used;
+
+    //events masked on this thread are left pending on the process
+    proc_event_mask_t blocked_events;
+
+    //previous mask restored by proc_event_return()
+    proc_event_mask_t saved_blocked_events;
+
+    //prevents nested handler delivery in the first async-event implementation
+    uint8 in_event_handler;
+
+    //set by proc_event_return() so syscall return preserves restored RAX
+    uint8 event_returning;
+
+    //which context slot should proc_event_return() restore into
+    uint8 event_restore_slot;
     
     //scheduler state
     int cpu_id;             //ID of CPU currently running this thread (-1 if none)

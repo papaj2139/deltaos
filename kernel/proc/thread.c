@@ -1,4 +1,5 @@
 #include <proc/thread.h>
+#include <proc/event.h>
 #include <proc/process.h>
 #include <proc/sched.h>
 #include <arch/context.h>
@@ -127,6 +128,10 @@ void thread_destroy(thread_t *thread) {
     if (proc && proc->thread_count == 0 && proc->pid != 0) {
         proc->state = PROC_STATE_ZOMBIE;
         thread_wake_all(&proc->exit_wait);
+        process_t *parent = process_find(proc->parent_pid);
+        if (parent) {
+            proc_post_event(parent, PROC_EVENT_CHILD);
+        }
     }
 }
 

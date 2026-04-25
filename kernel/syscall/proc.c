@@ -1,5 +1,6 @@
 #include <syscall/syscall.h>
 #include <proc/process.h>
+#include <proc/event.h>
 #include <proc/thread.h>
 #include <proc/sched.h>
 #include <kernel/elf64.h>
@@ -407,4 +408,60 @@ intptr sys_process_start(handle_t proc_h, uintptr entry, uintptr stack) {
 
     sched_add(thread);
     return (intptr)target->pid;
+}
+
+intptr sys_proc_send_event(uintptr pid, uint32 event) {
+    process_t *target = process_find(pid);
+    if (!target) return -1;
+    return proc_post_event(target, event);
+}
+
+intptr sys_proc_set_event_handler(uint32 event, uintptr entry, uint32 flags) {
+    process_t *current = process_current();
+    if (!current) return -1;
+    return proc_set_event_handler(current, event, entry, flags);
+}
+
+intptr sys_proc_mask_events(uint64 mask) {
+    thread_t *current = thread_current();
+    if (!current) return -1;
+    current->blocked_events |= (mask & PROC_EVENT_MASK_ALL);
+    return 0;
+}
+
+intptr sys_proc_unmask_events(uint64 mask) {
+    thread_t *current = thread_current();
+    if (!current) return -1;
+    current->blocked_events &= ~(mask & PROC_EVENT_MASK_ALL);
+    return 0;
+}
+
+intptr sys_proc_get_pending_events(uint64 *out_mask) {
+    process_t *current = process_current();
+    proc_event_mask_t pending;
+
+    if (!current || !out_mask) return -1;
+    if (proc_get_pending_events(current, &pending) != 0) return -1;
+    return copy_to_user_bytes(out_mask, &pending, sizeof(pending));
+}
+
+intptr sys_proc_event_return(void) {
+    thread_t *current = thread_current();
+    if (!current || !current->in_event_handler) return -1;
+
+    if (current->event_restore_slot == 0) {
+        current->context = current->saved_event_context;
+    } else {
+        current->user_context = current->saved_event_context;
+    }
+    current->blocked_events = current->saved_blocked_events;
+    current->in_event_handler = 0;
+    current->event_returning = 1;
+    return 0;
+}
+
+intptr sys_proc_set_console_foreground(uintptr pid) {
+    process_t *current = process_current();
+    if (!current) return -1;
+    return proc_set_console_foreground(current, pid);
 }

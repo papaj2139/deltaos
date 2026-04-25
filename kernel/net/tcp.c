@@ -12,6 +12,7 @@
 #include <arch/cpu.h>
 #include <arch/timer.h>
 #include <proc/sched.h>
+#include <proc/event.h>
 
 static tcp_conn_t connections[TCP_MAX_CONNECTIONS];
 static spinlock_irq_t tcp_lock = SPINLOCK_IRQ_INIT;
@@ -568,6 +569,11 @@ tcp_conn_t *tcp_connect_addr(netif_t *nif, const net_addr_t *dst_addr,
         uint64 timeout = (uint64)freq * 2;
         
         while (arch_timer_get_ticks() - start < timeout) {
+            if (proc_current_should_abort_blocking()) {
+                conn->state = TCP_STATE_CLOSED;
+                conn->active = false;
+                return NULL;
+            }
             if (conn->state == TCP_STATE_ESTABLISHED) return conn;
             net_poll();
             sched_yield();
@@ -616,6 +622,10 @@ int tcp_read(tcp_conn_t *conn, void *buf, size len) {
     
     irq_state_t flags = spinlock_irq_acquire(&tcp_lock);
     while (conn->rx_len == 0) {
+        if (proc_current_should_abort_blocking()) {
+            spinlock_irq_release(&tcp_lock, flags);
+            return -1;
+        }
         if (conn->state != TCP_STATE_ESTABLISHED && 
             conn->state != TCP_STATE_SYN_SENT &&
             conn->state != TCP_STATE_SYN_RECEIVED &&
