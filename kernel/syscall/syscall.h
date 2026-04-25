@@ -50,6 +50,13 @@
 #define SYS_CONTEXT_SET_HANDLE 74 //capture a handle-backed process context entry
 #define SYS_CONTEXT_GET_HANDLE 75 //materialize a handle from a context entry
 #define SYS_CONTEXT_REMOVE  76  //remove a process context entry
+#define SYS_PROC_SEND_EVENT 78 //post an async event to another process
+#define SYS_PROC_SET_EVENT_HANDLER 79 //install a userspace async event handler
+#define SYS_PROC_MASK_EVENTS 80 //block selected events on the current thread
+#define SYS_PROC_UNMASK_EVENTS 81 //unblock selected events on the current thread
+#define SYS_PROC_GET_PENDING_EVENTS 82 //read current process pending event mask
+#define SYS_PROC_EVENT_RETURN 83 //return from a userspace event handler
+#define SYS_PROC_SET_CONSOLE_FOREGROUND 84 //set process receiving Ctrl+C interrupts
 #define SYS_MKNODE          58  //create fs node
 #define SYS_REMOVE          59  //remove file or directory
 #define SYS_HANDLE_READ     6   //read from handle
@@ -235,6 +242,13 @@ intptr sys_context_get(const char *key, uint32 type, void *value_ptr, size value
 intptr sys_context_set_handle(const char *key, handle_t h, uint32 flags);
 intptr sys_context_get_handle(const char *key, handle_t *out_h, uint32 *flags_out);
 intptr sys_context_remove(const char *key);
+intptr sys_proc_send_event(uintptr pid, uint32 event);
+intptr sys_proc_set_event_handler(uint32 event, uintptr entry, uint32 flags);
+intptr sys_proc_mask_events(uint64 mask);
+intptr sys_proc_unmask_events(uint64 mask);
+intptr sys_proc_get_pending_events(uint64 *out_mask);
+intptr sys_proc_event_return(void);
+intptr sys_proc_set_console_foreground(uintptr pid);
 
 //helper for safe user-space copies
 int copy_user_bytes(const void *user_ptr, void *kernel_buf, size len);

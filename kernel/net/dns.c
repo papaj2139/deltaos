@@ -8,6 +8,7 @@
 #include <arch/cpu.h>
 #include <arch/timer.h>
 #include <proc/sched.h>
+#include <proc/event.h>
 
 typedef struct {
     netif_t *nif;
@@ -238,6 +239,9 @@ static int dns_send_query(netif_t *nif, dns_ctx_t *ctx, const uint8 *buf, size p
         uint32 timeout_ticks = freq * 2;
 
         while (arch_timer_get_ticks() - start < timeout_ticks) {
+            if (proc_current_should_abort_blocking()) {
+                goto done;
+            }
             net_poll();
             if (ctx->done) goto done;
             sleep(1);

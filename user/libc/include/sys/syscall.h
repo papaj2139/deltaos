@@ -56,6 +56,13 @@
 #define SYS_CONTEXT_SET_HANDLE 74
 #define SYS_CONTEXT_GET_HANDLE 75
 #define SYS_CONTEXT_REMOVE  76
+#define SYS_PROC_SEND_EVENT 78 //post an async event to another process
+#define SYS_PROC_SET_EVENT_HANDLER 79 //install a userspace async event handler
+#define SYS_PROC_MASK_EVENTS 80 //block selected events on the current thread
+#define SYS_PROC_UNMASK_EVENTS 81 //unblock selected events on the current thread
+#define SYS_PROC_GET_PENDING_EVENTS 82 //read current process pending event mask
+#define SYS_PROC_EVENT_RETURN 83 //return from a userspace event handler
+#define SYS_PROC_SET_CONSOLE_FOREGROUND 84 //set process receiving Ctrl+C interrupts
 
 #define SYS_MAX             256
 

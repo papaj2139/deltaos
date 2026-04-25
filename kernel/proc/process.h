@@ -5,6 +5,7 @@
 #include <obj/object.h>
 #include <obj/rights.h>
 #include <proc/context.h>
+#include <proc/event.h>
 #include <proc/wait.h>
 #include <lib/spinlock.h>
 
@@ -69,11 +70,17 @@ typedef struct process {
     
     int64 exit_code;
     wait_queue_t exit_wait;
+
+    //process-wide pending async events and handler table
+    proc_event_mask_t pending_events;
+    proc_event_action_t event_actions[PROC_EVENT_COUNT];
     
     //linked list for scheduler
     struct process *next;
 
     spinlock_t lock;
+    //protects pending_events and event_actions
+    spinlock_t event_lock;
 } process_t;
 
 //user address space bounds

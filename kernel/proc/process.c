@@ -122,8 +122,10 @@ process_t *process_create(const char *name) {
     proc->threads = NULL;
     proc->thread_count = 0;
     proc->exit_code = 0;
+    proc->pending_events = 0;
     wait_queue_init(&proc->exit_wait);
     spinlock_init(&proc->lock);
+    spinlock_init(&proc->event_lock);
     
     //add to process list
     spinlock_acquire(&proc_lock);
