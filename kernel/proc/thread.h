@@ -16,10 +16,12 @@ struct process;
 #define THREAD_STATE_BLOCKED 2
 #define THREAD_STATE_DEAD    3
 
-typedef enum event_restore_slot {
+enum event_restore_slot {
     EVENT_RESTORE_KERNEL_CTX = 0,
     EVENT_RESTORE_USER_CONTEXT = 1
-} event_restore_slot_t;
+};
+
+typedef uint8 event_restore_slot_t;
 
 //thread structure
 typedef struct thread {

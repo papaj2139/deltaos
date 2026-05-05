@@ -28,6 +28,9 @@ void sched_start(void);
 //exit current thread and schedule next (never returns)
 void sched_exit(void);
 
+//queue a non-running thread for deferred destruction
+void sched_queue_dead(thread_t *thread);
+
 //reap dead threads
 void sched_reap(void);
 

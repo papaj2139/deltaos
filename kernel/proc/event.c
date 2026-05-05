@@ -64,6 +64,7 @@ static int proc_deliver_pending_to_ctx(thread_t *thread, arch_context_t *ctx, ui
     proc_event_mask_t deliverable;
     proc_event_action_t action = {0};
     uint32 event = 0;
+    int consumed = 0;
     int found = 0;
 
     if (!thread || !thread->process || !ctx) return 0;
@@ -88,9 +89,6 @@ static int proc_deliver_pending_to_ctx(thread_t *thread, arch_context_t *ctx, ui
         }
     }
 
-    if (found) {
-        proc->pending_events &= ~PROC_EVENT_BIT(event);
-    }
     spinlock_irq_release(&proc->event_lock, event_flags);
 
     if (!found) return 0;
@@ -98,8 +96,18 @@ static int proc_deliver_pending_to_ctx(thread_t *thread, arch_context_t *ctx, ui
     //uncaught events fall back to kernel policy e.x INTERRUPT terminates
     //the foreground process without needing a userspace handler installed
     if (action.entry == 0 || !proc_event_is_deliverable_to_handler(event)) {
-        return proc_event_default_action(thread, event);
+        consumed = proc_event_default_action(thread, event);
+        if (consumed) {
+            event_flags = spinlock_irq_acquire(&proc->event_lock);
+            proc->pending_events &= ~PROC_EVENT_BIT(event);
+            spinlock_irq_release(&proc->event_lock, event_flags);
+        }
+        return consumed;
     }
+
+    event_flags = spinlock_irq_acquire(&proc->event_lock);
+    proc->pending_events &= ~PROC_EVENT_BIT(event);
+    spinlock_irq_release(&proc->event_lock, event_flags);
 
     //save the interrupted userspace image and redirect the chosen return
     //context to the handler then handler resumes via proc_event_return

@@ -4,6 +4,8 @@
 initrd/
 darc
 *.img
-
+*.iso
 .zed
 .clangd
+.iso-build/
+.codex
