@@ -2020,6 +2020,20 @@ static void xhci_init_ctrl(pci_device_t *pci) {
         kfree(c); return;
     }
 
+    if (c->event_polling) {
+        process_t *kernel = process_get_kernel();
+        thread_t *poll_thread = kernel ? thread_create(kernel, xhci_event_poll_worker, c) : NULL;
+        if (poll_thread) {
+            sched_add(poll_thread);
+            printf("[xhci] event polling fallback enabled\n");
+        } else {
+            printf("[xhci] ERR: event polling fallback unavailable\n");
+            xhci_free_controller_resources(c);
+            kfree(c);
+            return;
+        }
+    }
+
     printf("[xhci] controller running\n");
     printf("[xhci] stage 17: controller running\n");
     irq_state_t ctrl_flags = spinlock_irq_acquire(&g_ctrl_lock);
@@ -2028,17 +2042,6 @@ static void xhci_init_ctrl(pci_device_t *pci) {
         g_ctrls[g_ctrl_count++]  = c;
     }
     spinlock_irq_release(&g_ctrl_lock, ctrl_flags);
-
-    if (c->event_polling) {
-        process_t *kernel = process_get_kernel();
-        thread_t *poll_thread = kernel ? thread_create(kernel, xhci_event_poll_worker, c) : NULL;
-        if (poll_thread) {
-            sched_add(poll_thread);
-            printf("[xhci] event polling fallback enabled\n");
-        } else {
-            printf("[xhci] event polling fallback unavailable\n");
-        }
-    }
 
     if (!xhci_has_quirk(c, XHCI_QUIRK_RENESAS_FW_LOAD)) {
         xhci_nec_get_fw(c);

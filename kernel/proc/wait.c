@@ -1,4 +1,5 @@
 #include <proc/wait.h>
+#include <proc/process.h>
 #include <proc/thread.h>
 #include <proc/sched.h>
 #include <arch/interrupts.h>
@@ -59,11 +60,16 @@ void thread_wake_one(wait_queue_t *wq) {
         thread->wait_next = NULL;
         
         //mark as ready and add back to run queue
-        thread->state = THREAD_STATE_READY;
-        uint32 target_cpu = (thread->wait_cpu >= 0) ? (uint32)thread->wait_cpu
-                                                    : percpu_get()->cpu_index;
-        thread->wait_cpu = -1;
-        sched_add_cpu(thread, target_cpu);
+        if (thread->process && thread->process->state == PROC_STATE_DEAD) {
+            thread->wait_cpu = -1;
+            sched_queue_dead(thread);
+        } else {
+            thread->state = THREAD_STATE_READY;
+            uint32 target_cpu = (thread->wait_cpu >= 0) ? (uint32)thread->wait_cpu
+                                                        : percpu_get()->cpu_index;
+            thread->wait_cpu = -1;
+            sched_add_cpu(thread, target_cpu);
+        }
     }
 
     spinlock_irq_release(&wq->lock, flags);
@@ -76,11 +82,16 @@ void thread_wake_all(wait_queue_t *wq) {
         thread_t *thread = wq->head;
         wq->head = thread->wait_next;
         thread->wait_next = NULL;
-        thread->state = THREAD_STATE_READY;
-        uint32 target_cpu = (thread->wait_cpu >= 0) ? (uint32)thread->wait_cpu
-                                                    : percpu_get()->cpu_index;
-        thread->wait_cpu = -1;
-        sched_add_cpu(thread, target_cpu);
+        if (thread->process && thread->process->state == PROC_STATE_DEAD) {
+            thread->wait_cpu = -1;
+            sched_queue_dead(thread);
+        } else {
+            thread->state = THREAD_STATE_READY;
+            uint32 target_cpu = (thread->wait_cpu >= 0) ? (uint32)thread->wait_cpu
+                                                        : percpu_get()->cpu_index;
+            thread->wait_cpu = -1;
+            sched_add_cpu(thread, target_cpu);
+        }
     }
     wq->tail = NULL;
 

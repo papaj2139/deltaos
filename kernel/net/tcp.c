@@ -596,7 +596,7 @@ tcp_conn_t *tcp_connect_addr(netif_t *nif, const net_addr_t *dst_addr,
         spinlock_irq_release(&tcp_lock, lock_flags);
         return conn;
     }
-    if (conn->state == TCP_STATE_SYN_SENT) {
+    if (conn->state != TCP_STATE_ESTABLISHED) {
         conn->state = TCP_STATE_CLOSED;
         conn->active = false;
     }

@@ -100,6 +100,7 @@ intptr sys_readdir(handle_t h, dirent_t *entries, uint32 count, uint32 *index) {
     if (!rights_has(entry->rights, HANDLE_RIGHT_READ)) return -4;
     
     object_t *obj = entry->obj;
+    if (!obj) return -3;
     
     if (!obj->ops || !obj->ops->readdir) return -3;
     

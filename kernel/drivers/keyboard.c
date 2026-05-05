@@ -331,16 +331,17 @@ void keyboard_start(void) {
         spinlock_irq_release(&ctrlc_lock, flags);
         return;
     }
+    ctrlc_worker_started = true;
     spinlock_irq_release(&ctrlc_lock, flags);
 
     process_t *kernel = process_get_kernel();
     thread_t *thread = kernel ? thread_create(kernel, keyboard_ctrlc_worker, NULL) : NULL;
     if (thread) {
         sched_add(thread);
-        flags = spinlock_irq_acquire(&ctrlc_lock);
-        ctrlc_worker_started = true;
-        spinlock_irq_release(&ctrlc_lock, flags);
     } else {
+        flags = spinlock_irq_acquire(&ctrlc_lock);
+        ctrlc_worker_started = false;
+        spinlock_irq_release(&ctrlc_lock, flags);
         printf("[keyboard] failed to start Ctrl+C worker\n");
     }
 }

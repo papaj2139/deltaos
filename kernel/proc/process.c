@@ -290,6 +290,11 @@ void process_exit(process_t *proc, int code) {
     proc->exit_code = code;
     proc->state = PROC_STATE_DEAD;
     spinlock_release(&proc->lock);
+
+    //make sibling threads observe process teardown and terminate on their next
+    //wake/schedule path instead of continuing to run under a dead process
+    proc_post_event(proc, PROC_EVENT_TERMINATE);
+    proc_post_event(proc, PROC_EVENT_WAKE);
 }
 
 object_t *process_get_object(process_t *proc) {
