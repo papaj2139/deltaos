@@ -84,6 +84,9 @@ static int proc_deliver_pending_to_ctx(thread_t *thread, arch_context_t *ctx, ui
     for (event = 0; event < PROC_EVENT_COUNT; event++) {
         if (deliverable & PROC_EVENT_BIT(event)) {
             action = proc->event_actions[event];
+            //claim the bit while still under event_lock so this pass either
+            //owns the default action or owns the userspace delivery
+            proc->pending_events &= ~PROC_EVENT_BIT(event);
             found = 1;
             break;
         }
@@ -97,17 +100,8 @@ static int proc_deliver_pending_to_ctx(thread_t *thread, arch_context_t *ctx, ui
     //the foreground process without needing a userspace handler installed
     if (action.entry == 0 || !proc_event_is_deliverable_to_handler(event)) {
         consumed = proc_event_default_action(thread, event);
-        if (consumed) {
-            event_flags = spinlock_irq_acquire(&proc->event_lock);
-            proc->pending_events &= ~PROC_EVENT_BIT(event);
-            spinlock_irq_release(&proc->event_lock, event_flags);
-        }
         return consumed;
     }
-
-    event_flags = spinlock_irq_acquire(&proc->event_lock);
-    proc->pending_events &= ~PROC_EVENT_BIT(event);
-    spinlock_irq_release(&proc->event_lock, event_flags);
 
     //save the interrupted userspace image and redirect the chosen return
     //context to the handler then handler resumes via proc_event_return

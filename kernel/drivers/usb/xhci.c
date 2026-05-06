@@ -224,6 +224,28 @@ static void xhci_free_controller_resources(xhci_ctrl_t *c) {
     }
 }
 
+static void xhci_stop_controller(xhci_ctrl_t *c) {
+    if (!c) return;
+
+    //stop software polling first so no kernel thread keeps touching rings
+    //while the controller is being halted for cleanup
+    c->event_polling = false;
+
+    //mask the interrupter before clearing RUN so hardware stops signalling
+    //against event-ring storage that the caller may be about to free
+    uint32 iman = rt_read32(c, XHCI_RT_IMAN(0));
+    rt_write32(c, XHCI_RT_IMAN(0), iman & ~IMAN_IE);
+
+    //clear RUN/INTE/HSEE and wait for HCH so DMA should be quiesced before
+    //the allocator gets any controller-owned pages back
+    uint32 cmd = op_read32(c, XHCI_OP_USBCMD);
+    op_write32(c, XHCI_OP_USBCMD, cmd & ~(USBCMD_RUN | USBCMD_INTE | USBCMD_HSEE));
+    for (uint32 elapsed = 0; elapsed < 1000; elapsed++) {
+        if (op_read32(c, XHCI_OP_USBSTS) & USBSTS_HCH) break;
+        sleep(1);
+    }
+}
+
 static void xhci_zero_64b_regs_quirk(xhci_ctrl_t *c, uint32 max_intrs) {
     if (!xhci_has_quirk(c, XHCI_QUIRK_ZERO_64B_REGS)) return;
 
@@ -2028,6 +2050,7 @@ static void xhci_init_ctrl(pci_device_t *pci) {
             printf("[xhci] event polling fallback enabled\n");
         } else {
             printf("[xhci] ERR: event polling fallback unavailable\n");
+            xhci_stop_controller(c);
             xhci_free_controller_resources(c);
             kfree(c);
             return;

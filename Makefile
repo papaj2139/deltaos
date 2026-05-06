@@ -34,6 +34,7 @@ initrd: tools user
 
 .PHONY: iso
 iso: all
+	@rm -rf "$(ISO_BUILD_DIR)"
 	@mkdir -p "$(ISO_EFI_DIR)"
 	@cp bootloader/BOOTX64.EFI "$(ISO_EFI_DIR)/BOOTX64.EFI"
 	@cp bootloader/boot/delboot.cfg "$(ISO_EFI_DIR)/delboot.cfg"
@@ -44,8 +45,12 @@ iso: all
 		padding_bytes=$$(( $(ISO_EFI_PADDING_MB) * 1024 * 1024 )); \
 		total_bytes=$$(( payload_bytes + padding_bytes )); \
 		total_sectors=$$(( (total_bytes + 511) / 512 )); \
+		if [ $$total_sectors -gt 65535 ]; then \
+			echo "error: EFI boot image would exceed the El Torito UEFI size limit (65535 sectors)."; \
+			exit 1; \
+		fi; \
 		truncate -s $$(( total_sectors * 512 )) "$(ISO_EFI_IMG)"
-	@mformat -i "$(ISO_EFI_IMG)" -F ::
+	@mformat -i "$(ISO_EFI_IMG)" ::
 	@mmd -i "$(ISO_EFI_IMG)" ::/EFI
 	@mmd -i "$(ISO_EFI_IMG)" ::/EFI/BOOT
 	@mcopy -i "$(ISO_EFI_IMG)" "$(ISO_EFI_DIR)/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
@@ -55,10 +60,9 @@ iso: all
 	@cp "$(ISO_EFI_IMG)" "$(ISO_EFI_DIR)/efiboot.img"
 	@if [ -n "$(XORRISO)" ]; then \
 		echo "===> Creating $(ISO_NAME)"; \
-		"$(XORRISO)" -as mkisofs -R \
+		"$(XORRISO)" -as mkisofs -R -l -J \
 			-e EFI/BOOT/efiboot.img \
 			-no-emul-boot \
-			-isohybrid-gpt-basdat \
 			-o "$(ISO_NAME)" \
 			"$(ISO_ROOT)"; \
 	elif [ -n "$(MKISOFS)" ]; then \

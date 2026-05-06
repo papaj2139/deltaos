@@ -222,6 +222,66 @@ static void sched_activate(thread_t *next) {
     arch_fpu_activate_thread(next);
 }
 
+static inline void sched_requeue_or_dead(percpu_t *pc, thread_t *current) {
+    if (!current || current->state != THREAD_STATE_RUNNING || current == pc->idle_thread) return;
+
+    if (current->process && current->process->state == PROC_STATE_DEAD) {
+        //a process can die while one of its threads is still the current CPU
+        //context so move it straight to the dead list instead of requeueing it
+        sched_queue_dead(current);
+        return;
+    }
+
+    //normal preemption path puts the still-runnable current thread at the tail
+    //of this CPU run queue
+    current->state = THREAD_STATE_READY;
+    current->sched_next = NULL;
+    if (!pc->run_queue_tail) {
+        pc->run_queue_head = current;
+        pc->run_queue_tail = current;
+    } else {
+        pc->run_queue_tail->sched_next = current;
+        pc->run_queue_tail = current;
+    }
+}
+
+static inline thread_t *sched_drain_dead_head(percpu_t *pc, thread_t *next) {
+    //dead-process threads can already be sitting at the queue head when a
+    //sibling exits so drain them before selecting a runnable next thread
+    while (next != pc->idle_thread && next && next->process &&
+           next->process->state == PROC_STATE_DEAD) {
+        pc->run_queue_head = next->sched_next;
+        if (!pc->run_queue_head) {
+            pc->run_queue_tail = NULL;
+        }
+        next->sched_next = NULL;
+        sched_queue_dead(next);
+        next = pc->run_queue_head ? pc->run_queue_head : pc->idle_thread;
+    }
+    return next;
+}
+
+static inline void sched_dequeue_thread(percpu_t *pc, thread_t *next) {
+    if (!next || next == pc->idle_thread) return;
+
+    //unlink the chosen thread from the run queue and recompute the tail if the
+    //selected entry was the last one
+    thread_t **tp = &pc->run_queue_head;
+    while (*tp) {
+        if (*tp == next) {
+            *tp = next->sched_next;
+            if (pc->run_queue_tail == next) {
+                thread_t *t = pc->run_queue_head;
+                while (t && t->sched_next) t = t->sched_next;
+                pc->run_queue_tail = t;
+            }
+            next->sched_next = NULL;
+            break;
+        }
+        tp = &(*tp)->sched_next;
+    }
+}
+
 //pick next thread and switch to it
 static void schedule(void) {
     thread_t *current = thread_current();
@@ -253,54 +313,14 @@ static void schedule(void) {
     }
 
     //if current is runnable, move it back to run queue unless its process exited
-    if (current && current->state == THREAD_STATE_RUNNING && current != pc->idle_thread) {
-        if (current->process && current->process->state == PROC_STATE_DEAD) {
-            //the owning process exited while this thread was running
-            //do not requeue it or it can run after process_exit
-            sched_queue_dead(current);
-        } else {
-            current->state = THREAD_STATE_READY;
-            current->sched_next = NULL;
-            if (!pc->run_queue_tail) {
-                pc->run_queue_head = current;
-                pc->run_queue_tail = current;
-            } else {
-                pc->run_queue_tail->sched_next = current;
-                pc->run_queue_tail = current;
-            }
-        }
-    }
+    sched_requeue_or_dead(pc, current);
 
     //drop any queued threads whose process is already dead
     //the scheduler may see them before wait/reap has cleaned them up
-    while (next != pc->idle_thread && next && next->process &&
-           next->process->state == PROC_STATE_DEAD) {
-        pc->run_queue_head = next->sched_next;
-        if (!pc->run_queue_head) {
-            pc->run_queue_tail = NULL;
-        }
-        next->sched_next = NULL;
-        sched_queue_dead(next);
-        next = pc->run_queue_head ? pc->run_queue_head : pc->idle_thread;
-    }
+    next = sched_drain_dead_head(pc, next);
 
     //remove next from run queue and mark as running
-    if (next != pc->idle_thread) {
-        thread_t **tp = &pc->run_queue_head;
-        while (*tp) {
-            if (*tp == next) {
-                *tp = next->sched_next;
-                if (pc->run_queue_tail == next) {
-                    thread_t *t = pc->run_queue_head;
-                    while (t && t->sched_next) t = t->sched_next;
-                    pc->run_queue_tail = t;
-                }
-                next->sched_next = NULL;
-                break;
-            }
-            tp = &(*tp)->sched_next;
-        }
-    }
+    sched_dequeue_thread(pc, next);
     
     next->state = THREAD_STATE_RUNNING;
     next->cpu_id = pc->cpu_index; //mark as running on this CPU
@@ -367,53 +387,13 @@ void sched_preempt(void) {
         return;
     }
 
-    if (current && current->state == THREAD_STATE_RUNNING && current != pc->idle_thread) {
-        if (current->process && current->process->state == PROC_STATE_DEAD) {
-            //the process died before this preemption point
-            //keep the thread off the runnable queue from here on
-            sched_queue_dead(current);
-        } else {
-            current->state = THREAD_STATE_READY;
-            current->sched_next = NULL;
-            if (!pc->run_queue_tail) {
-                pc->run_queue_head = current;
-                pc->run_queue_tail = current;
-            } else {
-                pc->run_queue_tail->sched_next = current;
-                pc->run_queue_tail = current;
-            }
-        }
-    }
+    sched_requeue_or_dead(pc, current);
 
     //skip stale runnable entries from processes already marked dead
     //preemption only updates scheduler state, so cleanup is deferred
-    while (next != pc->idle_thread && next && next->process &&
-           next->process->state == PROC_STATE_DEAD) {
-        pc->run_queue_head = next->sched_next;
-        if (!pc->run_queue_head) {
-            pc->run_queue_tail = NULL;
-        }
-        next->sched_next = NULL;
-        sched_queue_dead(next);
-        next = pc->run_queue_head ? pc->run_queue_head : pc->idle_thread;
-    }
+    next = sched_drain_dead_head(pc, next);
 
-    if (next != pc->idle_thread) {
-        thread_t **tp = &pc->run_queue_head;
-        while (*tp) {
-            if (*tp == next) {
-                *tp = next->sched_next;
-                if (pc->run_queue_tail == next) {
-                    thread_t *t = pc->run_queue_head;
-                    while (t && t->sched_next) t = t->sched_next;
-                    pc->run_queue_tail = t;
-                }
-                next->sched_next = NULL;
-                break;
-            }
-            tp = &(*tp)->sched_next;
-        }
-    }
+    sched_dequeue_thread(pc, next);
     next->state = THREAD_STATE_RUNNING;
     next->cpu_id = pc->cpu_index;
     
