@@ -15,7 +15,6 @@ static uint32 fb_w = 0;
 static uint32 fb_h = 0;
 static uint32 fb_pitch = 0;
 static size fb_size = 0;
-
 static void fb_fill_words_target(uint32 *dest, uint32 color, size count) {
     //if color is uniform (all bytes same) we can use memset
     uint8 b1 = color & 0xFF;
@@ -74,14 +73,14 @@ static ssize fb_obj_write(object_t *obj, const void *buf, size len, size offset)
     //bounds check
     if (offset >= fb_size) return 0;
     if (offset + len > fb_size) len = fb_size - offset;
-    
+
     //write to backbuffer/frontbuffer
     uint8 *target = backbuffer ? (uint8*)backbuffer : (uint8*)framebuffer;
     
     memcpy(target + offset, buf, len);
     
-    //auto-flip when writing from start (full frame write)
-    if (offset == 0 && backbuffer) fb_flip();
+    //auto-flip after a complete frame write, including row-at-a-time writers
+    if (offset + len >= fb_size && backbuffer) fb_flip();
     
     return len;
 }

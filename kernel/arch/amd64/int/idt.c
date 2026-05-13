@@ -4,8 +4,10 @@
 #include <arch/mmu.h>
 #include <drivers/keyboard.h>
 #include <drivers/mouse.h>
+#include <drivers/sb16.h>
 #include <drivers/rtl8139.h>
 #include <drivers/vt/vt.h>
+#include <drivers/nvme.h>
 #include <drivers/usb/xhci.h>
 #include <lib/io.h>
 #include <arch/amd64/context.h>
@@ -19,6 +21,7 @@
 #include <proc/process.h>
 #include <proc/thread.h>
 #include <proc/event.h>
+#include <proc/bottom_half.h>
 
 struct idt_entry {
 	uint16    isr_low;      // The lower 16 bits of the ISR's address
@@ -169,6 +172,13 @@ static void irq0_handler(int from_usermode) {
     if (percpu_get()->cpu_index == 0) {
         vt_tick();
     }
+    
+    if (apic_is_enabled() && ioapic_is_enabled()) {
+        apic_send_eoi();
+    } else {
+        pic_send_eoi(0);
+    }
+
     sched_tick(from_usermode);  //preemptive scheduling - only preempt if from usermode
 }
 
@@ -210,30 +220,27 @@ void interrupt_handler(uint64 vector, uint64 error_code, uint64 rip, interrupt_f
     } else {
         uint8 irq = vector - 32;
 
-        if (apic_is_enabled() && ioapic_is_enabled()) {
-            apic_send_eoi();
-        } else {
-            pic_send_eoi(irq);
-        }
-        
         //check if we were interrupted from usermode using CS.RPL (authoritative)
         int from_usermode = ((frame->cs & 3) == 3) ? 1 : 0;
         
         if (vector == IPI_RESCHEDULE) {
-            //if interrupted from usermode, use sched_preempt() which updates the current-thread pointer
-            //the ISRs user_return path then loads the new thread's context cleanly
+            if (apic_is_enabled() && ioapic_is_enabled()) {
+                apic_send_eoi();
+            } else {
+                pic_send_eoi(irq);
+            }
+
             if (from_usermode) {
                 sched_preempt();
             }
-            return;
+            goto interrupt_epilogue_no_eoi;
         }
 
         bool handled = false;
         switch (irq) {
             case 0:
                 irq0_handler(from_usermode);
-                handled = true;
-                break;
+                goto interrupt_epilogue_no_eoi;
             case 1:
                 keyboard_irq();
                 handled = true;
@@ -250,10 +257,10 @@ void interrupt_handler(uint64 vector, uint64 error_code, uint64 rip, interrupt_f
             handled = true;
         }
 
-        if (vector >= 0x40 && vector <= 0x47) {
-            extern void nvme_isr_callback(uint64);
-            nvme_isr_callback(vector);
-            goto interrupt_epilogue;
+        if (vector >= NVME_MSIX_VECTOR_BASE && vector < NVME_MSIX_VECTOR_LIMIT) {
+            if (nvme_isr_callback(vector)) {
+                goto interrupt_epilogue;
+            }
         } else if (vector == XHCI_MSI_VECTOR) {
             xhci_irq();
             goto interrupt_epilogue;
@@ -264,7 +271,17 @@ void interrupt_handler(uint64 vector, uint64 error_code, uint64 rip, interrupt_f
         }
 
 interrupt_epilogue:
+        //device handlers run before EOI so level-triggered lines can be
+        //deasserted before the LAPIC accepts another interrupt from them
+        if (apic_is_enabled() && ioapic_is_enabled()) {
+            apic_send_eoi();
+        } else {
+            pic_send_eoi(irq);
+        }
+
+interrupt_epilogue_no_eoi:
         if (from_usermode) {
+            bottom_half_run_budget(16);
             thread_t *current = thread_current();
             if (current) {
                 proc_deliver_pending(current);
