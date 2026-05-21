@@ -59,9 +59,9 @@ static void nvme_trim(char *str, size len) {
 void nvme_msix_handler(nvme_ctrl_t *ctrl, uint16 qid) {
     ctrl->int_count++;
     if (qid == 0) {
-        thread_wake_one(&ctrl->admin_q.wq);
+        thread_wake_all(&ctrl->admin_q.wq);
     } else if (qid <= ctrl->num_io_queues) {
-        thread_wake_one(&ctrl->io_q[qid - 1].wq);
+        thread_wake_all(&ctrl->io_q[qid - 1].wq);
     }
 }
 
@@ -104,9 +104,12 @@ static int nvme_wait_completion(nvme_ctrl_t *ctrl, nvme_queue_t *q, uint16 cmd_i
     
     while (retries--) {
         nvme_cqe_t *cqe = &q->cq[q->cq_head];
-        uint16 status = cqe->status;
+        uint16 status = __atomic_load_n(&cqe->status, __ATOMIC_ACQUIRE);
         
         if ((status & 1) == q->cq_phase) {
+            //ensure we see the command_id and results written by the controller
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+            
             if (cqe->command_id == cmd_id) {
                 if (cdw0) *cdw0 = cqe->command_specific;
                 
@@ -254,6 +257,7 @@ static int nvme_discover_namespaces(nvme_ctrl_t *ctrl) {
                 blkdev->sector_count = ns->sector_count;
                 blkdev->ops = &nvme_blkdev_ops;
                 blkdev->data = ns;
+                ns->blkdev = blkdev;
                 gpt_scan(blkdev);
             } else {
                 kfree(blkdev);
@@ -480,6 +484,10 @@ static intptr nvme_get_info(object_t *obj, uint32 topic, void *buf, size len) {
         info.sector_count = ns->sector_count;
         memcpy(buf, &info, sizeof(info));
         return 0;
+    }
+    if (topic == OBJ_INFO_BLOCK_RESCAN) {
+        if (!ns->blkdev) return -1;
+        return gpt_rescan((blkdev_t *)ns->blkdev);
     }
     return -1;
 }

@@ -171,7 +171,8 @@ typedef enum {
     OBJ_INFO_SYSTEM_STATS = 5,  //system_stats_t (requires system handle)
     OBJ_INFO_BOOT_CMDLINE = 6,  //boot cmdline string (requires system handle)
     OBJ_INFO_BLOCK_DEVICE = 7,  //block_device_info_t (requires device handle)
-    OBJ_INFO_VT_STATE = 8       //vt_info_t (requires vt device handle)
+    OBJ_INFO_VT_STATE = 8,      //vt_info_t (requires vt device handle)
+    OBJ_INFO_BLOCK_RESCAN = 9   //trigger partition rescan (requires device handle)
 } object_info_topic_t;
 
 typedef struct {

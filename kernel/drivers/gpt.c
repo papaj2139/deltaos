@@ -7,6 +7,7 @@
 #include <obj/namespace.h>
 #include <lib/io.h>
 #include <lib/string.h>
+#include <lib/crc32.h>
 #include <fs/fs.h>
 #include <syscall/syscall.h>
 
@@ -21,23 +22,23 @@ static bool guid_is_null(const uint8 *guid) {
     return true;
 }
 
-//partition read - forwards to parent with offset
+//partition read - forwards to parent block device with LBA offset applied
 static int partition_read(blkdev_t *dev, uint64 lba, uint32 count, void *buf) {
     blkdev_t *parent = dev->parent;
     if (!parent) return -1;
     
-    //bounds check
+    //bounds check against partition size
     if (lba + count > dev->sector_count) return -1;
     
     return parent->ops->read(parent, dev->start_lba + lba, count, buf);
 }
 
-//partition write - forwards to parent with offset
+//partition write - forwards to parent block device with LBA offset applied
 static int partition_write(blkdev_t *dev, uint64 lba, uint32 count, const void *buf) {
     blkdev_t *parent = dev->parent;
     if (!parent) return -1;
     
-    //bounds check
+    //bounds check against partition size
     if (lba + count > dev->sector_count) return -1;
     
     return parent->ops->write(parent, dev->start_lba + lba, count, buf);
@@ -90,7 +91,7 @@ static ssize part_write_op(object_t *obj, const void *buf, size len, size offset
     //allocate kernel bounce buffer for NVmE DMA
     void *kbuf_phys = pmm_alloc((len + 4095) / 4096);
     if (!kbuf_phys) return -1;
-    void *kbuf = P2V(kbuf_phys);
+    void *kbuf = P2V(kbuf_phys);      
     
     memcpy(kbuf, buf, len);  //copy from userspace
     int result = partition_write(dev, lba, count, kbuf);
@@ -136,7 +137,7 @@ static object_ops_t partition_object_ops = {
 int gpt_scan(blkdev_t *dev) {
     if (!dev || !dev->ops || !dev->ops->read) return -1;
     
-    //allocate buffer for reading GPT header (LBA 1)
+    //allocate one page for all sector I/O
     void *buf_phys = pmm_alloc(1);
     if (!buf_phys) return -1;
     void *buf = P2V(buf_phys);
@@ -149,22 +150,67 @@ int gpt_scan(blkdev_t *dev) {
     
     gpt_header_t *hdr = (gpt_header_t *)buf;
     
-    //validate signature
+    //validate magic signature
     if (hdr->signature != GPT_SIGNATURE) {
         pmm_free(buf_phys, 1);
         return 0; //not GPT not an error
     }
+
+    //validate header_size before we attempt a CRC over it
+    if (hdr->header_size < 92 || hdr->header_size > dev->sector_size) {
+        printf("[gpt] ERR: %s has invalid header_size=%u, ignoring\n",
+               dev->name, hdr->header_size);
+        pmm_free(buf_phys, 1);
+        return 0;
+    }
+
+    //verify header CRC32: zero the crc field, compute over header, restore
+    uint32 stored_crc   = hdr->header_crc32;
+    hdr->header_crc32   = 0;
+    uint32 computed_crc = crc32(hdr, hdr->header_size);
+    hdr->header_crc32   = stored_crc;
+
+    if (computed_crc != stored_crc) {
+        printf("[gpt] ERR: %s header CRC mismatch (stored=0x%08x computed=0x%08x), ignoring\n",
+               dev->name, stored_crc, computed_crc);
+        pmm_free(buf_phys, 1);
+        return 0;
+    }
+
+    //entry size must be a power-of-two in range [128, 4096]
+    uint32 entry_size = hdr->partition_entry_size;
+    if (entry_size < 128 || entry_size > 4096 || (entry_size & (entry_size - 1)) != 0) {
+        printf("[gpt] ERR: %s has invalid partition_entry_size=%u, ignoring\n",
+               dev->name, entry_size);
+        pmm_free(buf_phys, 1);
+        return 0;
+    }
+
+    //clamp entry count to spec maximum of 128
+    uint32 num_entries = hdr->num_partition_entries;
+    if (num_entries > 128) {
+        printf("[gpt] WARN: %s claims %u entries, clamping to 128\n", dev->name, num_entries);
+        num_entries = 128;
+    }
+
+    //validate the entry table fits within the disk
+    uint32 entries_per_sector = dev->sector_size / entry_size;
+    uint32 table_sectors      = (num_entries + entries_per_sector - 1) / entries_per_sector;
+    if (hdr->partition_entry_lba < 2 ||
+        hdr->partition_entry_lba + table_sectors > dev->sector_count) {
+        printf("[gpt] ERR: %s partition entry table is out of disk bounds, ignoring\n", dev->name);
+        pmm_free(buf_phys, 1);
+        return 0;
+    }
     
     printf("[gpt] Found GPT on %s: header LBA %llu, table LBA %llu, entry count %u\n", 
-           dev->name, hdr->my_lba, hdr->partition_entry_lba, hdr->num_partition_entries);
+           dev->name, hdr->my_lba, hdr->partition_entry_lba, num_entries);
     
-    uint32 entry_size = hdr->partition_entry_size;
-    uint32 entries_per_sector = dev->sector_size / entry_size;
     uint32 partitions_found = 0;
     
-    //scan entries
-    for (uint32 i = 0; i < hdr->num_partition_entries && i < 128; i++) {
-        uint32 sector_offset = i / entries_per_sector;
+    //scan partition entries
+    for (uint32 i = 0; i < num_entries; i++) {
+        uint32 sector_offset   = i / entries_per_sector;
         uint32 entry_in_sector = i % entries_per_sector;
         uint64 lba = hdr->partition_entry_lba + sector_offset;
         
@@ -178,11 +224,18 @@ int gpt_scan(blkdev_t *dev) {
         
         gpt_entry_t *entry = (gpt_entry_t *)((uint8 *)buf + (entry_in_sector * entry_size));
         
+        //skip empty slots
         if (guid_is_null(entry->type_guid)) continue;
         
-        //valid partition found
-        uint64 start = entry->starting_lba;
-        uint64 end = entry->ending_lba;
+        uint64 start   = entry->starting_lba;
+        uint64 end     = entry->ending_lba;
+
+        //validate LBA range before registering this partition
+        if (start == 0 || end < start || end >= dev->sector_count) {
+            printf("[gpt]   entry %u: invalid LBA range %llu..%llu, skipping\n", i, start, end);
+            continue;
+        }
+        
         uint64 sectors = end - start + 1;
         
         blkdev_t *part = kzalloc(sizeof(blkdev_t));
@@ -199,7 +252,7 @@ int gpt_scan(blkdev_t *dev) {
         part->sector_size = dev->sector_size;
         part->sector_count = sectors;
         part->ops = &partition_ops;
-        part->data = dev->data;
+        part->data = part; //self-pointer: part_read/write_op receive the partition blkdev
         part->parent = dev;
         part->start_lba = start;
         
@@ -222,5 +275,19 @@ int gpt_scan(blkdev_t *dev) {
 
 //generic wrapper for blkdev
 int blkdev_scan_partitions(blkdev_t *dev) {
+    return gpt_scan(dev);
+}
+
+//remove all partitions for a block device from the namespace and re-scan
+int gpt_rescan(blkdev_t *dev) {
+    if (!dev || !dev->name) return -1;
+
+    //try to unregister up to 128 partitions
+    char name[64];
+    for (int i = 1; i <= 128; i++) {
+        snprintf(name, sizeof(name), "$devices/disks/%sp%u", dev->name, i);
+        ns_unregister(name);
+    }
+
     return gpt_scan(dev);
 }

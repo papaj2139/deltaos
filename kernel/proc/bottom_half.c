@@ -221,6 +221,7 @@ uint32 bottom_half_run_budget(uint32 budget) {
             bottom_half_pending_tail = NULL;
         }
         entry->next_pending = NULL;
+        entry->queued = 0;
         __atomic_add_fetch(&entry->in_flight, 1, __ATOMIC_ACQ_REL);
         fn = entry->fn;
         arg = entry->arg;
@@ -229,20 +230,14 @@ uint32 bottom_half_run_budget(uint32 budget) {
         //fn could be NULL if the entry was being unregistered concurrently
         //skip without counting it against the budget
         if (!fn) {
-            flags = spinlock_irq_acquire(&bottom_half_lock);
-            entry->queued = 0;
             __atomic_sub_fetch(&entry->in_flight, 1, __ATOMIC_ACQ_REL);
-            spinlock_irq_release(&bottom_half_lock, flags);
             continue;
         }
 
         fn(arg);
         ++ran;
 
-        flags = spinlock_irq_acquire(&bottom_half_lock);
-        entry->queued = 0;
         __atomic_sub_fetch(&entry->in_flight, 1, __ATOMIC_ACQ_REL);
-        spinlock_irq_release(&bottom_half_lock, flags);
     }
 
     return ran;

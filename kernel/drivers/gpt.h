@@ -37,5 +37,6 @@ typedef struct {
 //scan for GPT partitions on a block device
 //returns number of partitions found or negative on error
 int gpt_scan(blkdev_t *dev);
+int gpt_rescan(blkdev_t *dev);
 
 #endif

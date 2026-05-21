@@ -23,6 +23,7 @@ uint32 curses_get_cursor_row(void);
 uint32 curses_get_cols(void);
 uint32 curses_get_rows(void);
 void curses_flush(void);
+void curses_invalidate(void);
 
 void curses_putc(char c);
 void curses_putc_at(uint32 col, uint32 row, char c);
