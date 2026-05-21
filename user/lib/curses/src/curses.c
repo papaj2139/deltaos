@@ -497,6 +497,14 @@ void curses_center_text(uint32 row, const char *s) {
     curses_write_at(col, row, s, len);
 }
 
+void curses_invalidate(void) {
+    //force a full screen re-send on the next flush by poisoning prev_cells
+    if (curses_prev_cells) {
+        memset(curses_prev_cells, 0xFF,
+               curses_cell_count() * sizeof(curses_cell_t));
+    }
+}
+
 void curses_flush(void) {
     if (!curses_ready || !curses_cells || curses_vt == INVALID_HANDLE) return;
 

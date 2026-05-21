@@ -123,7 +123,7 @@ static void editor_draw(EditorState *state) {
     //title bar
     con_set_color(COLOR_WHITE, 0);
     char title[128];
-    snprintf(title, sizeof(title), "DelBoot v0.6 - Edit: %s", state->name);
+    snprintf(title, sizeof(title), "DelBoot 0.7 - Edit: %s", state->name);
     con_print_at(char_w * 2, char_h, title);
 
     //separator
@@ -146,17 +146,36 @@ static void editor_draw(EditorState *state) {
 static int editor_init(EditorState *state, ConfigEntry *entry) {
     state->field_index = 0;
     state->cursor_pos = 0;
+    state->name = NULL;
+    for (int i = 0; i < EDITOR_MAX_FIELDS; i++) {
+        state->fields[i] = NULL;
+    }
 
     //allocate name buffer
     gBS->AllocatePool(EfiLoaderData, 64, (void **)&state->name);
-    if (!state->name) return -1;
 
     //allocate field buffers
     gBS->AllocatePool(EfiLoaderData, CONFIG_MAX_PATH, (void **)&state->fields[EDITOR_FIELD_PATH]);
     gBS->AllocatePool(EfiLoaderData, CONFIG_MAX_PATH, (void **)&state->fields[EDITOR_FIELD_INITRD]);
     gBS->AllocatePool(EfiLoaderData, CONFIG_MAX_CMDLINE, (void **)&state->fields[EDITOR_FIELD_CMDLINE]);
 
-    if (!state->fields[EDITOR_FIELD_PATH] || !state->fields[EDITOR_FIELD_INITRD] || !state->fields[EDITOR_FIELD_CMDLINE]) {
+    if (!state->name || !state->fields[EDITOR_FIELD_PATH] || !state->fields[EDITOR_FIELD_INITRD] || !state->fields[EDITOR_FIELD_CMDLINE]) {
+        if (state->name) { 
+            gBS->FreePool(state->name); 
+            state->name = NULL; 
+        }
+        if (state->fields[EDITOR_FIELD_PATH]) { 
+            gBS->FreePool(state->fields[EDITOR_FIELD_PATH]); 
+            state->fields[EDITOR_FIELD_PATH] = NULL; 
+        }
+        if (state->fields[EDITOR_FIELD_INITRD]) { 
+            gBS->FreePool(state->fields[EDITOR_FIELD_INITRD]); 
+            state->fields[EDITOR_FIELD_INITRD] = NULL; 
+        }
+        if (state->fields[EDITOR_FIELD_CMDLINE]) { 
+            gBS->FreePool(state->fields[EDITOR_FIELD_CMDLINE]); 
+            state->fields[EDITOR_FIELD_CMDLINE] = NULL; 
+        }
         return -1;
     }
 

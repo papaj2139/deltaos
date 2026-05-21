@@ -3,9 +3,10 @@
 #include <mem.h>
 #include <string.h>
 #include <system.h>
+#include <crc32.h>
 
 #define MAX_DEVICES 32
-#define MAX_PARTITIONS 32
+#define MAX_PARTITIONS 128
 #define PATH_MAX_LEN 96
 
 #define GPT_SIGNATURE 0x5452415020494645ULL
@@ -57,6 +58,7 @@ typedef struct {
     uint64 sectors;
     uint64 size_bytes;
     uint64 attributes;
+    uint32 raw_index;  //index into cached_entries[]
 } partition_info_t;
 
 //left pane or right pane
@@ -77,11 +79,28 @@ static bool selected_is_gpt = false;
 static char detail_title[64] = "";
 static char detail_status[96] = "";
 
+//cached live gpt state (valid when selected_is_gpt)
+static gpt_header_t cached_gpt_hdr;
+static gpt_entry_t  cached_entries[128]; //always 128-entry table
+static uint32       cached_num_entries = 0;
+
+//field indices for the new-partition dialog
+#define NP_FIELD_START  0
+#define NP_FIELD_SIZE   1
+#define NP_FIELD_TYPE   2
+#define NP_FIELD_NAME   3
+#define NP_FIELD_COUNT  4
+
 //all zero guid means unused entry
 static bool guid_is_zero(const uint8 *guid) {
     for (uint32 i = 0; i < 16; i++) {
         if (guid[i] != 0) return false;
     }
+    return true;
+}
+
+static bool guid_is_null(const uint8 *guid) {
+    for (int i = 0; i < 16; i++) if (guid[i]) return false;
     return true;
 }
 
@@ -146,8 +165,8 @@ static void format_bytes(uint64 bytes, char *buf, size bufsz) {
     }
 }
 
+
 static int read_lba(handle_t dev, uint32 sector_size, uint64 lba, void *buf) {
-    //seek once then read one logical sector
     uint64 offset = lba * (uint64)sector_size;
     if (handle_seek(dev, offset, HANDLE_SEEK_SET) < 0) return -1;
     int result = handle_read(dev, buf, sector_size);
@@ -162,6 +181,192 @@ static void clear_partition_state(const char *status) {
     strncpy(detail_status, status, sizeof(detail_status) - 1);
     detail_status[sizeof(detail_status) - 1] = '\0';
 }
+
+static int write_lba(handle_t dev, uint32 sector_size, uint64 lba, const void *buf) {
+    uint64 offset = lba * (uint64)sector_size;
+    int retries = 3;
+    
+    void *verify = malloc(sector_size);
+    if (!verify) return -1; //cannot verify, treat as error
+
+    while (retries--) {
+        if (handle_seek(dev, offset, HANDLE_SEEK_SET) < 0) continue;
+        if (handle_write(dev, buf, sector_size) != (int)sector_size) continue;
+
+        //verify write
+        if (handle_seek(dev, offset, HANDLE_SEEK_SET) < 0) continue;
+        if (handle_read(dev, verify, sector_size) != (int)sector_size) continue;
+
+        if (memcmp(buf, verify, sector_size) == 0) {
+            free(verify);
+            return 0; //success
+        }
+    }
+
+    free(verify);
+    return -2; //persistent corruption or failure
+}
+
+//write in-memory gpt_entry_t array back to disk (primary + backup headers)
+//entry_buf must be a zeroed buffer large enough to hold all 128 entries
+//returns 0 on success, -1 on error
+static int commit_gpt(handle_t dev, uint32 sector_size,
+                      gpt_header_t *primary_hdr, gpt_entry_t *entries,
+                      uint32 num_entries) {
+    //calculate partition entry array CRC32
+    //we must calculate it over the full table as it will appear on disk
+    uint32 full_table_size = num_entries * primary_hdr->partition_entry_size;
+    uint8 *full_table = malloc(full_table_size);
+    if (!full_table) return -1;
+    memset(full_table, 0, full_table_size);
+
+    //copy our cached entries into the correctly-sized table buffer
+    for (uint32 i = 0; i < num_entries; i++) {
+        memcpy(full_table + i * primary_hdr->partition_entry_size, &entries[i], sizeof(gpt_entry_t));
+    }
+
+    uint32 entries_crc = crc32(full_table, full_table_size);
+
+    void *sector_buf = malloc(sector_size);
+    if (!sector_buf) { free(full_table); return -1; }
+
+    uint32 entries_per_sector = sector_size / primary_hdr->partition_entry_size;
+    uint32 sector_count = (num_entries + entries_per_sector - 1) / entries_per_sector;
+
+    //write primary entry array
+    for (uint32 s = 0; s < sector_count; s++) {
+        memset(sector_buf, 0, sector_size);
+        uint32 first = s * entries_per_sector;
+        uint32 count = entries_per_sector;
+        if (first + count > num_entries) count = num_entries - first;
+        
+        if (first < num_entries) {
+            memcpy(sector_buf, full_table + first * primary_hdr->partition_entry_size, 
+                   count * primary_hdr->partition_entry_size);
+        }
+
+        int res = write_lba(dev, sector_size, primary_hdr->partition_entry_lba + s, sector_buf);
+        if (res < 0) {
+            free(sector_buf); free(full_table);
+            if (res == -2) clear_partition_state("disk write verification failed (primary table)");
+            return -1;
+        }
+    }
+
+    //write backup entry array
+    uint64 backup_entry_lba = primary_hdr->alternate_lba - sector_count;
+    for (uint32 s = 0; s < sector_count; s++) {
+        memset(sector_buf, 0, sector_size);
+        uint32 first = s * entries_per_sector;
+        uint32 count = entries_per_sector;
+        if (first + count > num_entries) count = num_entries - first;
+
+        memcpy(sector_buf, full_table + first * primary_hdr->partition_entry_size,
+               count * primary_hdr->partition_entry_size);
+
+        int res = write_lba(dev, sector_size, backup_entry_lba + s, sector_buf);
+        if (res < 0) {
+            free(sector_buf); free(full_table);
+            if (res == -2) clear_partition_state("disk write verification failed (backup table)");
+            return -1;
+        }
+    }
+    
+    free(full_table);
+    free(sector_buf);
+
+    //update primary header checksums and write it
+    primary_hdr->partition_entries_crc32 = entries_crc;
+    primary_hdr->header_crc32 = 0;
+    primary_hdr->header_crc32 = crc32(primary_hdr, primary_hdr->header_size);
+
+    void *hdr_sector = malloc(sector_size);
+    if (!hdr_sector) return -1;
+    memset(hdr_sector, 0, sector_size);
+    memcpy(hdr_sector, primary_hdr, sizeof(gpt_header_t));
+    int res = write_lba(dev, sector_size, 1, hdr_sector);
+    if (res < 0) {
+        free(hdr_sector);
+        if (res == -2) clear_partition_state("disk write verification failed (primary header)");
+        return -1;
+    }
+
+    //build backup header (swap my_lba/alternate_lba and entry lba)
+    gpt_header_t backup_hdr = *primary_hdr;
+    backup_hdr.my_lba = primary_hdr->alternate_lba;
+    backup_hdr.alternate_lba = 1;
+    backup_hdr.partition_entry_lba = backup_entry_lba;
+    backup_hdr.header_crc32 = 0;
+    backup_hdr.header_crc32 = crc32(&backup_hdr, backup_hdr.header_size);
+
+    memset(hdr_sector, 0, sector_size);
+    memcpy(hdr_sector, &backup_hdr, sizeof(gpt_header_t));
+    res = write_lba(dev, sector_size, primary_hdr->alternate_lba, hdr_sector);
+    if (res < 0) {
+        free(hdr_sector);
+        if (res == -2) clear_partition_state("disk write verification failed (backup header)");
+        return -1;
+    }
+
+    free(hdr_sector);
+    return 0;
+}
+
+static int initialize_gpt(handle_t dev, block_device_info_t *info) {
+    if (info->sector_size < 512 || info->sector_count < 100) return -1;
+
+    gpt_header_t hdr = {0};
+    hdr.signature = GPT_SIGNATURE;
+    hdr.revision = 0x00010000;
+    hdr.header_size = 92;
+    hdr.my_lba = 1;
+    hdr.alternate_lba = info->sector_count - 1;
+    hdr.first_usable_lba = 34; //kinda bullshit but eh works
+    hdr.last_usable_lba = info->sector_count - 34;
+    
+    //generate a random disk guid (using ticks, should do proper entropy)
+    uint64 ticks = get_ticks();
+    memcpy(hdr.disk_guid, &ticks, 8);
+    memcpy(hdr.disk_guid + 8, &ticks, 8);
+
+    hdr.partition_entry_lba = 2;
+    hdr.num_partition_entries = 128;
+    hdr.partition_entry_size = 128;
+
+    //create an empty table
+    gpt_entry_t *empty_entries = calloc(128, sizeof(gpt_entry_t));
+    if (!empty_entries) return -1;
+
+    int res = commit_gpt(dev, info->sector_size, &hdr, empty_entries, 128);
+    free(empty_entries);
+    return res;
+}
+
+static int wipe_gpt(handle_t dev, block_device_info_t *info) {
+    if (info->sector_size == 0) return -1;
+    void *zero = malloc(info->sector_size);
+    if (!zero) return -1;
+    memset(zero, 0, info->sector_size);
+
+    //zero the header and some entries
+    for (uint64 lba = 0; lba < 64; lba++) {
+        if (write_lba(dev, info->sector_size, lba, zero) == -2) {
+            free(zero);
+            clear_partition_state("disk wipe verification failed");
+            return -1;
+        }
+    }
+    //zero the backup at the end
+    if (info->sector_count > 64) {
+        for (uint64 lba = info->sector_count - 64; lba < info->sector_count; lba++) {
+            write_lba(dev, info->sector_size, lba, zero);
+        }
+    }
+    
+    free(zero);
+    return 0;
+}
+
 
 static void inspect_selected_device(void) {
     //refresh partition info for the current disk
@@ -180,7 +385,6 @@ static void inspect_selected_device(void) {
         return;
     }
 
-    //we only care about gpt right now
     uint32 sector_size = dev->info.sector_size ? dev->info.sector_size : 512;
     if (sector_size < sizeof(gpt_header_t) || sector_size > 4096) {
         handle_close(h);
@@ -211,7 +415,7 @@ static void inspect_selected_device(void) {
     }
 
     selected_is_gpt = true;
-    //show usable lba range in the details pane
+    cached_gpt_hdr = *hdr;
     snprintf(detail_status, sizeof(detail_status),
              "gpt disk: usable LBA %lu..%lu",
              (unsigned long)hdr->first_usable_lba,
@@ -225,45 +429,50 @@ static void inspect_selected_device(void) {
         return;
     }
 
-    //cap the scan so the ui does not explode on weird tables
     uint32 per_sector = sector_size / entry_size;
     uint32 max_entries = hdr->num_partition_entries;
     if (max_entries > 128) max_entries = 128;
+    cached_num_entries = max_entries;
 
-    partition_count = 0;
-    for (uint32 i = 0; i < max_entries && partition_count < MAX_PARTITIONS; i++) {
-        //gpt entries are packed into a flat array across sectors
-        uint64 lba = hdr->partition_entry_lba + (i / per_sector);
+    //read all entries into cached_entries (raw, including empty ones)
+    memset(cached_entries, 0, sizeof(cached_entries));
+    for (uint32 i = 0; i < max_entries; i++) {
+        uint64 lba = cached_gpt_hdr.partition_entry_lba + (i / per_sector);
         uint32 slot = i % per_sector;
-
         if (slot == 0) {
-            if (read_lba(h, sector_size, lba, sector) < 0) {
-                snprintf(detail_status, sizeof(detail_status), "failed reading GPT entry LBA %lu", (unsigned long)lba);
-                break;
+            if (read_lba(h, sector_size, lba, sector) < 0) break;
+        }
+        gpt_entry_t *src = (gpt_entry_t *)((uint8 *)sector + slot * entry_size);
+        cached_entries[i] = *src;
+    }
+
+    //build display list from cached_entries
+    partition_count = 0;
+    for (uint32 i = 0; i < max_entries; i++) {
+        gpt_entry_t *e = &cached_entries[i];
+        if (guid_is_null(e->type_guid)) continue;
+        
+        if (partition_count < MAX_PARTITIONS) {
+            partition_info_t *out = &partitions[partition_count++];
+            uint16 name_copy[36];
+            memset(out, 0, sizeof(*out));
+            memcpy(name_copy, e->name, sizeof(name_copy));
+            out->valid = true;
+            utf16_name_to_ascii(name_copy, out->name, sizeof(out->name));
+            if (!out->name[0]) {
+                snprintf(out->name, sizeof(out->name), "partition %lu", (unsigned long)partition_count);
             }
+            strncpy(out->type_name, type_guid_name(e->type_guid), sizeof(out->type_name) - 1);
+            guid_to_string(e->type_guid, out->type_guid, sizeof(out->type_guid));
+            guid_to_string(e->partition_guid, out->guid, sizeof(out->guid));
+            out->start_lba  = e->starting_lba;
+            out->end_lba    = e->ending_lba;
+            out->sectors    = out->end_lba - out->start_lba + 1;
+            out->size_bytes = out->sectors * (uint64)sector_size;
+            out->attributes = e->attributes;
+            //store raw entry index so we can locate it in cached_entries later
+            out->raw_index  = i;
         }
-
-        gpt_entry_t *entry = (gpt_entry_t *)((uint8 *)sector + slot * entry_size);
-        if (guid_is_zero(entry->type_guid)) continue;
-
-        partition_info_t *out = &partitions[partition_count++];
-        //convert one entry into displayable strings
-        uint16 name_copy[36];
-        memset(out, 0, sizeof(*out));
-        memcpy(name_copy, entry->name, sizeof(name_copy));
-        out->valid = true;
-        utf16_name_to_ascii(name_copy, out->name, sizeof(out->name));
-        if (!out->name[0]) {
-            snprintf(out->name, sizeof(out->name), "partition %lu", (unsigned long)partition_count);
-        }
-        strncpy(out->type_name, type_guid_name(entry->type_guid), sizeof(out->type_name) - 1);
-        guid_to_string(entry->type_guid, out->type_guid, sizeof(out->type_guid));
-        guid_to_string(entry->partition_guid, out->guid, sizeof(out->guid));
-        out->start_lba = entry->starting_lba;
-        out->end_lba = entry->ending_lba;
-        out->sectors = out->end_lba - out->start_lba + 1;
-        out->size_bytes = out->sectors * (uint64)sector_size;
-        out->attributes = entry->attributes;
     }
 
     if (partition_count == 0) {
@@ -276,8 +485,352 @@ static void inspect_selected_device(void) {
     handle_close(h);
 }
 
+static void do_delete_partition(void) {
+    if (!selected_is_gpt || partition_count == 0) return;
+    if (selected_partition >= partition_count) return;
+
+    partition_info_t *p = &partitions[selected_partition];
+    uint32 raw = p->raw_index;
+
+    //open with write rights
+    device_entry_t *dev = &devices[selected_device];
+    handle_t h = get_obj(INVALID_HANDLE, dev->path, RIGHT_READ | RIGHT_WRITE);
+    if (h == INVALID_HANDLE) {
+        strncpy(detail_status, "error: cannot open device for writing", sizeof(detail_status) - 1);
+        return;
+    }
+
+    uint32 sector_size = dev->info.sector_size ? dev->info.sector_size : 512;
+
+    //zero the entry in the cache
+    memset(&cached_entries[raw], 0, sizeof(gpt_entry_t));
+
+    int err = commit_gpt(h, sector_size, &cached_gpt_hdr, cached_entries, cached_num_entries);
+    if (err == 0) {
+        //trigger kernel rescan so it unregisters old partition objects
+        object_get_info(h, OBJ_INFO_BLOCK_RESCAN, NULL, 0);
+    }
+    handle_close(h);
+
+    if (err < 0) {
+        strncpy(detail_status, "error: failed to write GPT to disk", sizeof(detail_status) - 1);
+        //restore entry from disk on failure
+        inspect_selected_device();
+        return;
+    }
+
+    //refresh display
+    inspect_selected_device();
+}
+
+//line-input (used in dialogs)
+//buf is pre-populated by the caller (used as the initial editable value)
+//prompt is displayed at (col, row); result replaces buf on enter
+//returns 0 on enter, -1 on escape
+static int curses_readline(uint32 col, uint32 row, uint32 max_width,
+                           char *buf, uint32 buflen) {
+    if (buflen == 0) return -1;
+    //seed length from whatever the caller already put in buf
+    uint32 len = 0;
+    while (len < buflen - 1 && buf[len]) len++;
+    buf[len] = '\0';
+
+    //show cursor immediately before the first paint
+    curses_show_cursor(true);
+
+    for (;;) {
+        //draw field background then text
+        curses_set_bg(CURSES_RGB(40, 40, 80));
+        curses_set_fg(CURSES_RGB(30, 30, 30));
+        curses_fill_rect(col, row, max_width, 1, ' ');
+        curses_set_bg(CURSES_RGB(40, 40, 80));
+        curses_set_fg(CURSES_RGB(255, 255, 180));
+        curses_write_at(col, row, buf, max_width);
+        curses_set_bg(CURSES_RGB(0, 0, 0));
+        curses_set_cursor(col + len, row);
+        curses_flush();
+
+        kbd_event_t ev;
+        if (curses_read(&ev) < 0) { curses_show_cursor(false); return -1; }
+        if (!ev.pressed) continue;
+
+        if (curses_event_is_submit(&ev)) {
+            curses_show_cursor(false);
+            return 0;
+        }
+        if (ev.codepoint == 0x1B) { curses_show_cursor(false); return -1; }
+        if (curses_event_is_backspace(&ev)) {
+            if (len > 0) { len--; buf[len] = '\0'; }
+            continue;
+        }
+        if (curses_event_is_printable(&ev) && len + 1 < buflen) {
+            buf[len++] = curses_event_char(&ev);
+            buf[len] = '\0';
+        }
+    }
+}
+
+//parse a decimal uint64 string, returns -1 on error
+static int parse_u64(const char *s, uint64 *out) {
+    if (!s || !s[0]) return -1;
+    uint64 v = 0;
+    for (uint32 i = 0; s[i]; i++) {
+        if (s[i] < '0' || s[i] > '9') return -1;
+        v = v * 10 + (uint64)(s[i] - '0');
+    }
+    *out = v;
+    return 0;
+}
+
+static const uint8 linux_data_guid[16] = {
+    0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47,
+    0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4
+};
+static const uint8 basic_data_guid[16] = {
+    0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44,
+    0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7
+};
+static const uint8 esp_guid[16] = {
+    0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11,
+    0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B
+};
+
+//draw one labeled row in the new-partition dialog
+//active=true highlights it as the field being edited
+static void np_draw_field(uint32 bx, uint32 by, uint32 bw,
+                          uint32 field_row, const char *label, uint32 label_col,
+                          const char *value, uint32 value_col, uint32 value_w,
+                          bool active) {
+    //label
+    curses_set_bg(CURSES_RGB(20, 20, 40));
+    curses_set_fg(active ? CURSES_RGB(255, 255, 255) : CURSES_RGB(160, 160, 160));
+    curses_write_at(bx + label_col, by + field_row, label, bw - label_col - 1);
+
+    //value box: bright bg when active, dark when idle
+    if (active) {
+        curses_set_bg(CURSES_RGB(50, 50, 110));
+        curses_set_fg(CURSES_RGB(255, 255, 160));
+    } else {
+        curses_set_bg(CURSES_RGB(28, 28, 55));
+        curses_set_fg(CURSES_RGB(200, 200, 140));
+    }
+    curses_fill_rect(bx + value_col, by + field_row, value_w, 1, ' ');
+    curses_write_at(bx + value_col, by + field_row, value, value_w);
+    curses_set_bg(CURSES_RGB(20, 20, 40));
+}
+
+static void do_new_partition(void) {
+    if (!selected_is_gpt) return;
+
+    //find first empty slot (type GUID is null)
+    int slot = -1;
+    for (int i = 0; i < (int)cached_num_entries; i++) {
+        if (guid_is_null(cached_entries[i].type_guid)) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == -1) {
+        strncpy(detail_status, "error: GPT table is full", sizeof(detail_status) - 1);
+        return;
+    }
+
+    uint32 scr_rows = curses_get_rows();
+    uint32 scr_cols = curses_get_cols();
+    uint32 bw = 62, bh = 16;
+    uint32 bx = (scr_cols > bw + 4) ? (scr_cols - bw) / 2 : 2;
+    uint32 by = (scr_rows > bh + 4) ? (scr_rows - bh) / 2 : 2;
+
+    uint32 sector_size = devices[selected_device].info.sector_size
+                         ? devices[selected_device].info.sector_size : 512;
+
+    //editable field buffers with defaults pre-filled
+    char start_buf[24], size_buf[24], name_buf[40];
+    uint64 start_lba = cached_gpt_hdr.first_usable_lba;
+    uint64 size_mib  = 1;
+    uint32 type_sel  = 0;
+    const char *type_names[3] = {"Linux fs", "Basic data", "EFI system"};
+
+    snprintf(start_buf, sizeof(start_buf), "%lu", (unsigned long)start_lba);
+    snprintf(size_buf,  sizeof(size_buf),  "%lu", (unsigned long)size_mib);
+    name_buf[0] = '\0';
+
+    //field layout constants (column offsets within box)
+    const uint32 LABEL_COL  = 2;
+    const uint32 VALUE_COL  = 20;
+    const uint32 VALUE_W    = bw - VALUE_COL - 3;
+    //rows within box for each field
+    const uint32 field_rows[NP_FIELD_COUNT] = {3, 5, 7, 9};
+    const char  *labels[NP_FIELD_COUNT]     = {
+        "Start LBA:", "Size (MiB):", "Type:", "Name:"
+    };
+
+    uint32 active_field = NP_FIELD_START;
+    bool done_ok = false;
+
+    for (;;) {
+        //draw the dialog frame
+        curses_set_bg(CURSES_RGB(20, 20, 40));
+        curses_set_fg(CURSES_RGB(100, 180, 255));
+        curses_fill_rect(bx, by, bw, bh, ' ');
+        curses_draw_box(bx, by, bw, bh);
+        curses_write_at(bx + 2, by, " New Partition ", bw - 4);
+
+        //hint line
+        curses_set_bg(CURSES_RGB(20, 20, 40));
+        curses_set_fg(CURSES_RGB(120, 120, 120));
+        curses_write_at(bx + 2, by + bh - 3,
+                        "Tab/Enter=next field   t=cycle type   Esc=cancel", bw - 4);
+        curses_write_at(bx + 2, by + bh - 2,
+                        "Enter on last field confirms.", bw - 4);
+
+        //draw the four fields
+        //type field value string
+        char type_val[32];
+        snprintf(type_val, sizeof(type_val), "%s", type_names[type_sel]);
+
+        np_draw_field(bx, by, bw, field_rows[NP_FIELD_START], labels[NP_FIELD_START],
+                      LABEL_COL, start_buf, VALUE_COL, VALUE_W,
+                      active_field == NP_FIELD_START);
+        np_draw_field(bx, by, bw, field_rows[NP_FIELD_SIZE], labels[NP_FIELD_SIZE],
+                      LABEL_COL, size_buf, VALUE_COL, VALUE_W,
+                      active_field == NP_FIELD_SIZE);
+        np_draw_field(bx, by, bw, field_rows[NP_FIELD_TYPE], labels[NP_FIELD_TYPE],
+                      LABEL_COL, type_val, VALUE_COL, VALUE_W,
+                      active_field == NP_FIELD_TYPE);
+        np_draw_field(bx, by, bw, field_rows[NP_FIELD_NAME], labels[NP_FIELD_NAME],
+                      LABEL_COL, name_buf, VALUE_COL, VALUE_W,
+                      active_field == NP_FIELD_NAME);
+
+        curses_set_bg(CURSES_RGB(0, 0, 0));
+        curses_flush();
+
+        //handle the active field
+        if (active_field == NP_FIELD_TYPE) {
+            //type is not a text input - handle t/enter/esc inline
+            //show cursor on the type value cell
+            curses_set_cursor(bx + VALUE_COL, by + field_rows[NP_FIELD_TYPE]);
+            curses_show_cursor(true);
+            curses_flush();
+
+            kbd_event_t ev;
+            if (curses_read(&ev) < 0) goto cancel;
+            if (!ev.pressed) continue;
+            if (ev.codepoint == 0x1B) { curses_show_cursor(false); goto cancel; }
+            if (curses_event_is_submit(&ev) || ev.codepoint == '\t') {
+                curses_show_cursor(false);
+                //advance to next field
+                active_field = (active_field + 1) % NP_FIELD_COUNT;
+                continue;
+            }
+            if (curses_event_is_printable(&ev)) {
+                char c = curses_event_char(&ev);
+                if (c == 't' || c == 'T')
+                    type_sel = (type_sel + 1) % 3;
+            }
+            continue;
+        }
+
+        //text input fields
+        char *active_buf;
+        uint32 active_bufsz;
+        switch (active_field) {
+            case NP_FIELD_START: active_buf = start_buf; active_bufsz = sizeof(start_buf); break;
+            case NP_FIELD_SIZE:  active_buf = size_buf;  active_bufsz = sizeof(size_buf);  break;
+            default:             active_buf = name_buf;  active_bufsz = sizeof(name_buf);  break;
+        }
+
+        uint32 vx = bx + VALUE_COL;
+        uint32 vy = by + field_rows[active_field];
+        int rc = curses_readline(vx, vy, VALUE_W, active_buf, active_bufsz);
+        if (rc < 0) goto cancel;
+
+        //validate and advance
+        if (active_field == NP_FIELD_START) {
+            uint64 tmp;
+            if (parse_u64(start_buf, &tmp) < 0
+                    || tmp < cached_gpt_hdr.first_usable_lba
+                    || tmp > cached_gpt_hdr.last_usable_lba) {
+                strncpy(detail_status, "invalid start LBA", sizeof(detail_status) - 1);
+                //restore default so field is valid again
+                start_lba = cached_gpt_hdr.first_usable_lba;
+                snprintf(start_buf, sizeof(start_buf), "%lu", (unsigned long)start_lba);
+            } else {
+                start_lba = tmp;
+            }
+            active_field = NP_FIELD_SIZE;
+
+        } else if (active_field == NP_FIELD_SIZE) {
+            uint64 tmp;
+            if (parse_u64(size_buf, &tmp) < 0 || tmp == 0) {
+                strncpy(detail_status, "invalid size", sizeof(detail_status) - 1);
+                size_mib = 1;
+                snprintf(size_buf, sizeof(size_buf), "%lu", (unsigned long)size_mib);
+            } else {
+                size_mib = tmp;
+            }
+            active_field = NP_FIELD_TYPE;
+
+        } else if (active_field == NP_FIELD_NAME) {
+            //name field - last one confirm
+            done_ok = true;
+            break;
+        }
+        continue;
+
+    cancel:
+        done_ok = false;
+        break;
+    }
+
+    if (!done_ok) return;
+
+    //compute LBA range
+    uint64 sectors_needed = (size_mib * 1024ULL * 1024ULL + sector_size - 1) / sector_size;
+    uint64 end_lba = start_lba + sectors_needed - 1;
+    if (end_lba > cached_gpt_hdr.last_usable_lba) {
+        strncpy(detail_status, "error: partition extends beyond usable space", sizeof(detail_status) - 1);
+        return;
+    }
+
+    //fill the entry
+    gpt_entry_t *e = &cached_entries[slot];
+    memset(e, 0, sizeof(*e));
+    const uint8 *tguid = (type_sel == 0) ? linux_data_guid
+                       : (type_sel == 1) ? basic_data_guid : esp_guid;
+    memcpy(e->type_guid, tguid, 16);
+    memcpy(e->partition_guid, tguid, 16);
+    e->partition_guid[0] ^= (uint8)(start_lba & 0xFF);
+    e->partition_guid[1] ^= (uint8)((start_lba >> 8) & 0xFF);
+    e->starting_lba = start_lba;
+    e->ending_lba   = end_lba;
+    e->attributes   = 0;
+    for (uint32 k = 0; k < 36 && name_buf[k]; k++)
+        e->name[k] = (uint16)(unsigned char)name_buf[k];
+
+    //commit to disk
+    device_entry_t *dev = &devices[selected_device];
+    handle_t h = get_obj(INVALID_HANDLE, dev->path, RIGHT_READ | RIGHT_WRITE);
+    if (h == INVALID_HANDLE) {
+        strncpy(detail_status, "error: cannot open device for writing", sizeof(detail_status) - 1);
+        memset(e, 0, sizeof(*e));
+        return;
+    }
+    int err = commit_gpt(h, sector_size, &cached_gpt_hdr, cached_entries, cached_num_entries);
+    if (err == 0) {
+        object_get_info(h, OBJ_INFO_BLOCK_RESCAN, NULL, 0);
+    }
+    handle_close(h);
+    if (err < 0) {
+        strncpy(detail_status, "error: failed to write GPT", sizeof(detail_status) - 1);
+        memset(e, 0, sizeof(*e));
+        return;
+    }
+    inspect_selected_device();
+}
+
+//rescan $devices/disks and rebuild the left pane
 static void reload_devices(void) {
-    //rescan $devices/disks and rebuild the left pane
     device_count = 0;
     partition_count = 0;
     selected_is_gpt = false;
@@ -305,6 +858,14 @@ static void reload_devices(void) {
 
             handle_t h = get_obj(INVALID_HANDLE, out->path, RIGHT_GET_INFO);
             if (h == INVALID_HANDLE) continue;
+
+            //skip partitions (names ending in p[0-9]+ like nvme1n1p1)
+            char *p = strchr(out->name, 'p');
+            if (p && p > out->name && p[1] >= '0' && p[1] <= '9') {
+                handle_close(h);
+                continue;
+            }
+
             if (object_get_info(h, OBJ_INFO_BLOCK_DEVICE, &out->info, sizeof(out->info)) == 0) {
                 //only keep entries that actually expose block device info
                 device_count++;
@@ -405,8 +966,8 @@ static void draw_details_pane(uint32 x, uint32 y, uint32 w, uint32 h) {
         } else {
             curses_set_fg(CURSES_RGB(255, 255, 255));
         }
-        snprintf(buf, sizeof(buf), "%c %lu. %s", idx == selected_partition ? '>' : ' ',
-                 (unsigned long)(idx + 1), p->name);
+        snprintf(buf, sizeof(buf), "%c %lu. %s (slot %u)", idx == selected_partition ? '>' : ' ',
+                 (unsigned long)(idx + 1), p->name, p->raw_index);
         curses_write_at(x + 2, line_y + i * 2, buf, w - 4);
 
         curses_set_fg(CURSES_RGB(170, 170, 170));
@@ -457,7 +1018,7 @@ static void redraw(void) {
     curses_set_fg(CURSES_RGB(120, 220, 255));
     curses_center_text(0, "DeltaOS Partition Manager");
     curses_set_fg(CURSES_RGB(180, 180, 180));
-    curses_center_text(1, "read-only view for disks and GPT partitions");
+    curses_center_text(1, "GPT partition editor - i:init  n:new  d:delete  W:wipe  r:reload  q:quit");
 
     uint32 left_w = cols / 3;
     if (left_w < 20) left_w = 20;
@@ -472,7 +1033,7 @@ static void redraw(void) {
     curses_set_fg(CURSES_RGB(140, 140, 140));
     curses_draw_box(2, rows - 3, cols - 4, 3);
     curses_write_at(4, rows - 3, " help ", cols - 8);
-    curses_write_at(4, rows - 2, "tab switch pane   j/k move   r reload   q quit", cols - 8);
+    curses_write_at(4, rows - 2, "tab switch pane   j/k move   i init   n new   d delete   W wipe   r reload   q quit", cols - 8);
     curses_flush();
 }
 
@@ -504,10 +1065,75 @@ int main(void) {
         if (!curses_event_is_printable(&ev)) continue;
         char ch = curses_event_char(&ev);
 
-        //q quits, r rescans, j/k moves selection
+        //q quits, r rescans, j/k moves selection, n/d modify partitions
         if (ch == 'q' || ch == 'Q') break;
         if (ch == 'r' || ch == 'R') {
             reload_devices();
+            redraw();
+            continue;
+        }
+        if (ch == 'W') { //shift+W to wipe
+            if (device_count > 0) {
+                handle_t h = get_obj(INVALID_HANDLE, devices[selected_device].path, RIGHT_READ | RIGHT_WRITE | RIGHT_GET_INFO);
+                if (h != INVALID_HANDLE) {
+                    wipe_gpt(h, &devices[selected_device].info);
+                    object_get_info(h, OBJ_INFO_BLOCK_RESCAN, NULL, 0);
+                    handle_close(h);
+                    reload_devices();
+                }
+            }
+            redraw();
+            continue;
+        }
+        if (ch == 'i' || ch == 'I') { //initialize GPT
+            if (device_count > 0) {
+                handle_t h = get_obj(INVALID_HANDLE, devices[selected_device].path, RIGHT_READ | RIGHT_WRITE | RIGHT_GET_INFO);
+                if (h != INVALID_HANDLE) {
+                    initialize_gpt(h, &devices[selected_device].info);
+                    object_get_info(h, OBJ_INFO_BLOCK_RESCAN, NULL, 0);
+                    handle_close(h);
+                    reload_devices();
+                }
+            }
+            redraw();
+            continue;
+        }
+        //new partition - available from either pane if disk is GPT
+        if ((ch == 'n' || ch == 'N') && selected_is_gpt) {
+            do_new_partition();
+            reload_devices();
+            redraw();
+            continue;
+        }
+        //delete partition - only from partition pane
+        if ((ch == 'd' || ch == 'D') && focus_pane == FOCUS_PARTITIONS && partition_count > 0) {
+            //confirm before nuking
+            uint32 rows = curses_get_rows();
+            uint32 cols = curses_get_cols();
+            uint32 bw = 46, bh = 5;
+            uint32 bx = (cols > bw + 4) ? (cols - bw) / 2 : 2;
+            uint32 by = (rows > bh + 4) ? (rows - bh) / 2 : 2;
+            curses_set_bg(CURSES_RGB(40, 10, 10));
+            curses_set_fg(CURSES_RGB(255, 80, 80));
+            curses_fill_rect(bx, by, bw, bh, ' ');
+            curses_draw_box(bx, by, bw, bh);
+            curses_write_at(bx + 2, by,     " Confirm Delete ", bw - 4);
+            curses_set_fg(CURSES_RGB(230, 230, 230));
+            curses_write_at(bx + 2, by + 2, "Delete selected partition? y=yes  n=no", bw - 4);
+            curses_flush();
+            kbd_event_t cev;
+            bool confirmed = false;
+            while (curses_read(&cev) == 0) {
+                if (!cev.pressed) continue;
+                if (!curses_event_is_printable(&cev)) continue;
+                char cc = curses_event_char(&cev);
+                if (cc == 'y' || cc == 'Y') { confirmed = true; break; }
+                break;
+            }
+            if (confirmed) {
+                do_delete_partition();
+                reload_devices();
+            }
             redraw();
             continue;
         }
@@ -535,6 +1161,7 @@ int main(void) {
             redraw();
             continue;
         }
+
     }
 
     curses_show_cursor(true);

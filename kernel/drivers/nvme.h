@@ -162,6 +162,7 @@ typedef struct {
     uint64      sector_count;
     uint32      sector_size;
     void        *obj; // object_t*
+    void        *blkdev; //blkdev_t*
 } nvme_ns_t;
 
 struct nvme_ctrl {
